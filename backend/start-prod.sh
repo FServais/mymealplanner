@@ -11,7 +11,7 @@ echo "=============================================="
 
 uvicorn main:app \
   --host 0.0.0.0 \
-  --port 8000 \
+  --port 8082 \
   --workers 4 \
   --limit-concurrency 100 \
   --backlog 500 \

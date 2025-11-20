@@ -3,6 +3,14 @@ FROM node:18-alpine as build
 
 WORKDIR /app
 
+# Accept build arguments
+ARG VITE_API_URL
+ARG BUILD_VERSION
+
+# Set them as environment variables for the build
+ENV VITE_API_URL=$VITE_API_URL
+ENV BUILD_VERSION=$BUILD_VERSION
+
 COPY package*.json ./
 RUN npm install
 
