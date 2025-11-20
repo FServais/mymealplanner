@@ -36,7 +36,7 @@ A modern, AI-powered recipe management and meal planning application built with 
 - **FastAPI**: Modern, fast Python web framework
 - **SQLAlchemy**: SQL toolkit and ORM
 - **SQLite**: Lightweight database
-- **OpenAI API**: GPT-4 for recipe parsing and ingredient analysis
+- **OpenAI API**: GPT-5-nano for recipe parsing and ingredient analysis
 - **Gunicorn + Uvicorn**: Production-grade ASGI server
 
 ### Frontend
