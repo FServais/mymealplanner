@@ -124,7 +124,7 @@ def parse_recipe_with_llm(text: str, api_key: str = None, provider: str = "opena
 
     try:
         response = client.chat.completions.create(
-            model="gpt-5-nano",
+            model="gpt-5-mini",
             messages=[
                 {"role": "system", "content": PARSE_SYSTEM_PROMPT},
                 {
