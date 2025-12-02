@@ -166,7 +166,7 @@ deactivate
 # Rebuild frontend
 cd ../frontend
 npm install
-VITE_API_URL=http://localhost npm run build
+VITE_API_URL=https://meal.servais-devos.com npm run build
 rm -rf /var/www/mealplanner/*
 cp -r dist/* /var/www/mealplanner/
 

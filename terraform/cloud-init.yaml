@@ -45,7 +45,7 @@ write_files:
           }
           
           # Backend root endpoints (recipes, meal-planner, etc)
-          location ~ ^/(recipes|meal-planner|meal-plans|tools|images|docs|openapi.json) {
+          location ~ ^/(recipes|meal-planner|meal-plans|tools|images|thumbnails|docs|openapi.json) {
               proxy_pass http://127.0.0.1:8000;
               proxy_http_version 1.1;
               proxy_set_header Upgrade $http_upgrade;
@@ -78,6 +78,8 @@ write_files:
           --timeout 120 \
           --access-logfile /var/log/mealplanner/access.log \
           --error-logfile /var/log/mealplanner/error.log
+      StandardOutput=journal
+      StandardError=journal
       Restart=always
       RestartSec=10
       
@@ -109,7 +111,7 @@ write_files:
       echo "Building frontend..."
       cd ../frontend
       npm install
-      VITE_API_URL=http://localhost npm run build
+      VITE_API_URL=https://meal.servais-devos.com npm run build
       
       # Copy to nginx directory
       sudo rm -rf /var/www/mealplanner/*

@@ -4,6 +4,8 @@ import { getRecipes, deleteRecipe, getIngredients, getRecipeCount } from '../ser
 import { Plus, Trash2, ChefHat, Filter, X, Search, ChevronDown, Eye } from 'lucide-react';
 import RecipePreviewModal from './RecipePreviewModal';
 
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8082';
+
 const RecipeList = ({ onAddToPlan }) => {
     const [recipes, setRecipes] = useState([]);
     const [selectedRecipes, setSelectedRecipes] = useState(new Set());
@@ -224,7 +226,7 @@ const RecipeList = ({ onAddToPlan }) => {
                         // Remove .pdf extension
                         const fileNameWithoutExt = sourceFile.replace('.pdf', '');
                         // Use local backend endpoint
-                        return `http://localhost:8000/images/thumbnails/${fileNameWithoutExt}.jpg`;
+                        return `${API_URL}/thumbnails/${fileNameWithoutExt}.jpg`;
                     };
 
                     const thumbnailUrl = getThumbnailUrl(recipe.source_file);

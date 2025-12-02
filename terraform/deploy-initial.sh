@@ -48,7 +48,7 @@ echo "✓ Backend dependencies installed"
 # Build frontend
 echo ""
 echo "Step 4: Building frontend..."
-ssh root@$DROPLET_IP "cd $APP_DIR/frontend && npm install && VITE_API_URL=http://localhost npm run build"
+ssh root@$DROPLET_IP "cd $APP_DIR/frontend && npm install && VITE_API_URL=https://meal.servais-devos.com npm run build"
 ssh root@$DROPLET_IP "rm -rf /var/www/mealplanner/* && cp -r $APP_DIR/frontend/dist/* /var/www/mealplanner/ && chown -R www-data:www-data /var/www/mealplanner"
 echo "✓ Frontend built and deployed"
 
