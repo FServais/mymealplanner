@@ -25,6 +25,8 @@ write_files:
           listen 80;
           server_name ${app_domain != "" ? app_domain : "_"};
           
+          client_max_body_size 10M;
+          
           # Frontend - serve React static files
           location / {
               root /var/www/mealplanner;
