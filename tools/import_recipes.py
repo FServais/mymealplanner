@@ -34,34 +34,60 @@ def check_if_exists(filename):
 def import_recipe(file_path: Path):
     print(f"Processing {file_path.name}...")
 
-    # 1. Extract and Parse (Import)
+    # 1. Submit PDF for processing
     try:
         with open(file_path, "rb") as f:
             files = {"file": (file_path.name, f, "application/pdf")}
-            response = httpx.post(f"{API_URL}/recipes/import/pdf", files=files, timeout=180.0)
+            response = httpx.post(f"{API_URL}/recipes/import/pdf", files=files, timeout=30.0)
             response.raise_for_status()
-            recipe_data = response.json()
-            print(f"  - Successfully extracted: {recipe_data.get('name')}")
+            task_data = response.json()
+            task_id = task_data.get("task_id")
+            print(f"  - Submitted for processing (task ID: {task_id})")
     except httpx.HTTPStatusError as e:
-        if e.response.status_code == 400:
-            print(f"  - Error: Could not extract text from PDF")
-        elif e.response.status_code == 500:
-            error_detail = e.response.json().get("detail", "Unknown server error")
-            print(f"  - Error parsing recipe: {error_detail}")
-        else:
-            print(f"  - HTTP Error {e.response.status_code}: {e.response.text}")
+        print(f"  - HTTP Error {e.response.status_code}: {e.response.text}")
         return
     except httpx.TimeoutException:
-        print(f"  - Error: Request timeout (PDF processing took too long)")
+        print(f"  - Error: Request timeout during submission")
         return
     except httpx.RequestError as e:
         print(f"  - Error connecting to API: {e}")
         return
     except Exception as e:
-        print(f"  - Error importing PDF: {e}")
+        print(f"  - Error submitting PDF: {e}")
         return
 
-    # 2. Save to Database
+    # 2. Poll for completion
+    max_attempts = 180  # 6 minutes max
+    attempts = 0
+    recipe_data = None
+
+    while attempts < max_attempts:
+        try:
+            status_response = httpx.get(f"{API_URL}/recipes/import/status/{task_id}", timeout=10.0)
+            status_response.raise_for_status()
+            task = status_response.json()
+
+            if task["status"] == "completed":
+                recipe_data = task.get("result")
+                print(f"  - Successfully extracted: {recipe_data.get('name')}")
+                break
+            elif task["status"] == "failed":
+                error_msg = task.get("error", "Unknown error")
+                print(f"  - Error parsing recipe: {error_msg}")
+                return
+            else:
+                # Still processing
+                time.sleep(2)
+                attempts += 1
+        except Exception as e:
+            print(f"  - Error polling status: {e}")
+            return
+
+    if recipe_data is None:
+        print(f"  - Error: Processing timeout (exceeded 6 minutes)")
+        return
+
+    # 3. Save to Database
     try:
         create_response = httpx.post(f"{API_URL}/recipes/", json=recipe_data, timeout=60.0)
         create_response.raise_for_status()

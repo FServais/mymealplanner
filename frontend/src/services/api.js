@@ -34,6 +34,7 @@ export const importRecipePDF = (formData) => api.post('/recipes/import/pdf', for
         'Content-Type': 'multipart/form-data',
     },
 });
+export const getImportStatus = (taskId) => api.get(`/recipes/import/status/${taskId}`);
 export const generateShoppingList = (recipeIds) => api.post('/meal-planner/generate-shopping-list', recipeIds);
 
 export const createMealPlan = (mealPlan) => api.post('/meal-plans/', mealPlan);

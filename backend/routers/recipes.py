@@ -1,4 +1,5 @@
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Query
+import uuid
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Query, BackgroundTasks
 from sqlalchemy.orm import Session
 from typing import List, Optional
 import crud
@@ -63,18 +64,35 @@ def delete_recipe(recipe_id: int, db: Session = Depends(database.get_db)):
     return {"ok": True}
 
 @router.post("/import/pdf")
-async def import_recipe_pdf(file: UploadFile = File(...)):
+async def import_recipe_pdf(
+    background_tasks: BackgroundTasks,
+    file: UploadFile = File(...)
+):
     content = await file.read()
-    text = services.extract_text_from_pdf(content)
-    if not text:
-        raise HTTPException(status_code=400, detail="Could not extract text from PDF")
+    
+    # Generate a unique task ID
+    task_id = str(uuid.uuid4())
+    
+    # Initialize task status
+    services.TASK_STORE[task_id] = {
+        "status": "pending",
+        "created_at": services.time.time()
+    }
+    
+    # Start background task
+    background_tasks.add_task(
+        services.process_pdf_import_task,
+        task_id,
+        content,
+        file.filename
+    )
+    
+    return {"task_id": task_id, "status": "pending"}
 
-    recipe_data = services.parse_recipe_with_llm(text)
-
-    # Check if parsing resulted in an error
-    if recipe_data.get("name", "").startswith("Error"):
-        error_detail = recipe_data.get("description", "Unknown error occurred")
-        raise HTTPException(status_code=500, detail=error_detail)
-
-    recipe_data["source_file"] = file.filename
-    return recipe_data
+@router.get("/import/status/{task_id}")
+def get_import_status(task_id: str):
+    task = services.TASK_STORE.get(task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    
+    return task

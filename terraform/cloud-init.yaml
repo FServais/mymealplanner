@@ -74,7 +74,7 @@ write_files:
       WorkingDirectory=/home/mealplanner/mymealplanner/backend
       EnvironmentFile=/etc/mealplanner/.env
       ExecStart=/home/mealplanner/mymealplanner/backend/venv/bin/gunicorn main:app \
-          --workers 2 \
+          --workers 4 \
           --worker-class uvicorn.workers.UvicornWorker \
           --bind 127.0.0.1:8000 \
           --timeout 600 \

@@ -1,12 +1,50 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { importRecipePDF, createRecipe } from '../services/api';
+import { importRecipePDF, createRecipe, getImportStatus } from '../services/api';
 import { Upload, Loader, FileText } from 'lucide-react';
 
 const PDFImport = () => {
     const navigate = useNavigate();
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
+
+    const pollForStatus = async (taskId) => {
+        const maxAttempts = 180; // 6 minutes max (180 * 2s)
+        let attempts = 0;
+
+        while (attempts < maxAttempts) {
+            try {
+                const statusResponse = await getImportStatus(taskId);
+                const task = statusResponse.data;
+
+                if (task.status === 'completed') {
+                    // Success - save the recipe
+                    await createRecipe(task.result);
+                    navigate('/');
+                    return;
+                } else if (task.status === 'failed') {
+                    // Failed - show error
+                    const errorMessage = task.error || 'Unknown error occurred';
+                    setError(`Error: ${errorMessage}`);
+                    setLoading(false);
+                    return;
+                }
+
+                // Still processing - wait and try again
+                await new Promise(resolve => setTimeout(resolve, 2000));
+                attempts++;
+            } catch (err) {
+                console.error('Error polling status:', err);
+                setError('Failed to check processing status. Please try again.');
+                setLoading(false);
+                return;
+            }
+        }
+
+        // Timeout
+        setError('Processing timeout. The PDF import took too long. Please try again.');
+        setLoading(false);
+    };
 
     const handleFileUpload = async (e) => {
         const file = e.target.files[0];
@@ -19,12 +57,12 @@ const PDFImport = () => {
         formData.append('file', file);
 
         try {
+            // Submit the file and get task ID
             const response = await importRecipePDF(formData);
-            const extractedRecipe = response.data;
+            const { task_id } = response.data;
 
-            // Automatically save the imported recipe
-            await createRecipe(extractedRecipe);
-            navigate('/');
+            // Start polling for status
+            await pollForStatus(task_id);
         } catch (err) {
             console.error("Import failed", err);
 
@@ -43,13 +81,12 @@ const PDFImport = () => {
                     errorMessage = err.response.data?.detail || err.message || errorMessage;
                 }
             } else if (err.code === 'ECONNABORTED') {
-                errorMessage = "Request timeout. The PDF processing took too long. Please try a smaller file.";
+                errorMessage = "Request timeout. Please try again.";
             } else if (err.request) {
                 errorMessage = "Network error. Please check your connection and try again.";
             }
 
             setError(errorMessage);
-        } finally {
             setLoading(false);
         }
     };

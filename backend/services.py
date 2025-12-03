@@ -1,5 +1,6 @@
-import os
-from typing import List
+import uuid
+import time
+from typing import List, Dict, Any
 import pypdf
 import io
 import json
@@ -10,6 +11,43 @@ from openai import (
     BadRequestError,
     APIConnectionError,
 )
+
+# In-memory storage for background tasks
+# Format: {task_id: {"status": "pending"|"processing"|"completed"|"failed", "result": dict, "error": str}}
+TASK_STORE: Dict[str, Dict[str, Any]] = {}
+
+def process_pdf_import_task(task_id: str, file_content: bytes, filename: str):
+    """
+    Background task to process PDF import.
+    Updates the TASK_STORE with progress and result.
+    """
+    try:
+        TASK_STORE[task_id]["status"] = "processing"
+        
+        text = extract_text_from_pdf(file_content)
+        if not text:
+            TASK_STORE[task_id]["status"] = "failed"
+            TASK_STORE[task_id]["error"] = "Could not extract text from PDF"
+            return
+
+        recipe_data = parse_recipe_with_llm(text)
+        
+        # Check if parsing resulted in an error
+        if recipe_data.get("name", "").startswith("Error"):
+            TASK_STORE[task_id]["status"] = "failed"
+            TASK_STORE[task_id]["error"] = recipe_data.get("description", "Unknown error occurred")
+            return
+        
+        recipe_data["source_file"] = filename
+        
+        TASK_STORE[task_id]["status"] = "completed"
+        TASK_STORE[task_id]["result"] = recipe_data
+        
+    except Exception as e:
+        print(f"Error in background task {task_id}: {e}")
+        TASK_STORE[task_id]["status"] = "failed"
+        TASK_STORE[task_id]["error"] = str(e)
+
 
 def extract_text_from_pdf(file_content: bytes) -> str:
     try:
