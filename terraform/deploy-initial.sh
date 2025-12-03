@@ -28,13 +28,24 @@ echo "✓ Cloud-init complete"
 # Upload application code
 echo ""
 echo "Step 2: Uploading application code..."
+
+# Backup database if it exists
+echo "Backing up database..."
+ssh root@$DROPLET_IP "if [ -f $APP_DIR/backend/sql_app.db ]; then cp $APP_DIR/backend/sql_app.db /tmp/sql_app.db.bak; echo 'Database backed up'; else echo 'No database to backup'; fi"
+
+# Wipe directory but preserve structure if needed (we are wiping everything so we need to recreate)
 ssh root@$DROPLET_IP "rm -rf $APP_DIR/*"
+
 rsync -avz --exclude 'node_modules' --exclude 'venv' --exclude '.git' --exclude '__pycache__' \
     --exclude 'sql_app.db' --exclude 'dist' \
     $LOCAL_DIR/backend/ root@$DROPLET_IP:$APP_DIR/backend/
 
 rsync -avz --exclude 'node_modules' --exclude 'dist' --exclude '.git' \
     $LOCAL_DIR/frontend/ root@$DROPLET_IP:$APP_DIR/frontend/
+
+# Restore database
+echo "Restoring database..."
+ssh root@$DROPLET_IP "if [ -f /tmp/sql_app.db.bak ]; then mv /tmp/sql_app.db.bak $APP_DIR/backend/sql_app.db; echo 'Database restored'; fi"
 
 ssh root@$DROPLET_IP "chown -R $APP_USER:$APP_USER $APP_DIR"
 echo "✓ Code uploaded"
