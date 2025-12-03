@@ -42,6 +42,21 @@ def import_recipe(file_path: Path):
             response.raise_for_status()
             recipe_data = response.json()
             print(f"  - Successfully extracted: {recipe_data.get('name')}")
+    except httpx.HTTPStatusError as e:
+        if e.response.status_code == 400:
+            print(f"  - Error: Could not extract text from PDF")
+        elif e.response.status_code == 500:
+            error_detail = e.response.json().get("detail", "Unknown server error")
+            print(f"  - Error parsing recipe: {error_detail}")
+        else:
+            print(f"  - HTTP Error {e.response.status_code}: {e.response.text}")
+        return
+    except httpx.TimeoutException:
+        print(f"  - Error: Request timeout (PDF processing took too long)")
+        return
+    except httpx.RequestError as e:
+        print(f"  - Error connecting to API: {e}")
+        return
     except Exception as e:
         print(f"  - Error importing PDF: {e}")
         return

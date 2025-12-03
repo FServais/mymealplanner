@@ -66,5 +66,11 @@ async def import_recipe_pdf(file: UploadFile = File(...)):
         raise HTTPException(status_code=400, detail="Could not extract text from PDF")
     
     recipe_data = services.parse_recipe_with_llm(text)
+    
+    # Check if parsing resulted in an error
+    if recipe_data.get("name", "").startswith("Error"):
+        error_detail = recipe_data.get("description", "Unknown error occurred")
+        raise HTTPException(status_code=500, detail=error_detail)
+    
     recipe_data["source_file"] = file.filename
     return recipe_data

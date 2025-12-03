@@ -137,6 +137,7 @@ def parse_recipe_with_llm(text: str, api_key: str = None, provider: str = "opena
                 "type": "function",
                 "function": {"name": "extract_recipe"}
             },
+            timeout=600.0,  # 2 minute timeout
         )
 
         tool_call = response.choices[0].message.tool_calls[0]
@@ -170,11 +171,72 @@ def parse_recipe_with_llm(text: str, api_key: str = None, provider: str = "opena
 
         return recipe_data
 
+    except OpenAI.AuthenticationError as e:
+        error_msg = f"Authentication failed: Invalid API key or expired token"
+        print(f"OpenAI AuthenticationError: {e}")
+        return {
+            "name": "Error: Authentication Failed",
+            "description": error_msg,
+            "ingredients": [],
+            "instructions": []
+        }
+    
+    except OpenAI.RateLimitError as e:
+        error_msg = f"Rate limit exceeded. Please try again later."
+        print(f"OpenAI RateLimitError: {e}")
+        return {
+            "name": "Error: Rate Limit Exceeded",
+            "description": error_msg,
+            "ingredients": [],
+            "instructions": []
+        }
+    
+    except OpenAI.BadRequestError as e:
+        error_msg = f"Invalid request: {str(e)}"
+        print(f"OpenAI BadRequestError: {e}")
+        return {
+            "name": "Error: Invalid Request",
+            "description": error_msg,
+            "ingredients": [],
+            "instructions": []
+        }
+    
+    except OpenAI.APIConnectionError as e:
+        error_msg = f"Failed to connect to OpenAI API. Check network connection."
+        print(f"OpenAI APIConnectionError: {e}")
+        return {
+            "name": "Error: Connection Failed",
+            "description": error_msg,
+            "ingredients": [],
+            "instructions": []
+        }
+    
+    except OpenAI.APITimeoutError as e:
+        error_msg = f"Request timed out. The recipe may be too long or complex."
+        print(f"OpenAI APITimeoutError: {e}")
+        return {
+            "name": "Error: Request Timeout",
+            "description": error_msg,
+            "ingredients": [],
+            "instructions": []
+        }
+    
+    except (KeyError, IndexError, json.JSONDecodeError) as e:
+        error_msg = f"Failed to parse LLM response: {str(e)}"
+        print(f"Response parsing error: {e}")
+        return {
+            "name": "Error: Invalid LLM Response",
+            "description": error_msg,
+            "ingredients": [],
+            "instructions": []
+        }
+    
     except Exception as e:
-        print(f"Error parsing recipe with LLM: {e}")
+        error_msg = f"Unexpected error: {str(e)}"
+        print(f"Unexpected error parsing recipe with LLM: {e}")
         return {
             "name": "Error Parsing Recipe",
-            "description": f"Failed to parse: {str(e)}",
+            "description": error_msg,
             "ingredients": [],
             "instructions": []
         }

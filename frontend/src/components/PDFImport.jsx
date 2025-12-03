@@ -27,7 +27,28 @@ const PDFImport = () => {
             navigate('/');
         } catch (err) {
             console.error("Import failed", err);
-            setError("Failed to import PDF. Please try again.");
+
+            // Extract detailed error message from response
+            let errorMessage = "Failed to import PDF. Please try again.";
+
+            if (err.response) {
+                if (err.response.status === 400) {
+                    errorMessage = "Could not extract text from PDF. Please ensure the file is a valid PDF.";
+                } else if (err.response.status === 500) {
+                    const detail = err.response.data?.detail || "Server error during processing";
+                    errorMessage = `Error: ${detail}`;
+                } else if (err.response.status === 413) {
+                    errorMessage = "File is too large. Maximum size is 10MB.";
+                } else {
+                    errorMessage = err.response.data?.detail || err.message || errorMessage;
+                }
+            } else if (err.code === 'ECONNABORTED') {
+                errorMessage = "Request timeout. The PDF processing took too long. Please try a smaller file.";
+            } else if (err.request) {
+                errorMessage = "Network error. Please check your connection and try again.";
+            }
+
+            setError(errorMessage);
         } finally {
             setLoading(false);
         }
