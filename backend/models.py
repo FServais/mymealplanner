@@ -50,3 +50,14 @@ class Instruction(Base):
     recipe_id = Column(Integer, ForeignKey("recipes.id"))
 
     recipe = relationship("Recipe", back_populates="instructions")
+
+class ImportTask(Base):
+    __tablename__ = "import_tasks"
+
+    id = Column(String, primary_key=True)  # UUID
+    status = Column(String, index=True)  # pending, processing, completed, failed
+    filename = Column(String, nullable=True)
+    result = Column(Text, nullable=True)  # JSON string of recipe data
+    error = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

@@ -1,6 +1,6 @@
+import os
 import uuid
-import time
-from typing import List, Dict, Any
+from typing import List
 import pypdf
 import io
 import json
@@ -11,42 +11,78 @@ from openai import (
     BadRequestError,
     APIConnectionError,
 )
-
-# In-memory storage for background tasks
-# Format: {task_id: {"status": "pending"|"processing"|"completed"|"failed", "result": dict, "error": str}}
-TASK_STORE: Dict[str, Dict[str, Any]] = {}
+from sqlalchemy.orm import Session
 
 def process_pdf_import_task(task_id: str, file_content: bytes, filename: str):
     """
     Background task to process PDF import.
-    Updates the TASK_STORE with progress and result.
+    Updates the database with progress and result.
     """
+    from database import SessionLocal
+    from models import ImportTask
+    
+    print(f"[PDF Import {task_id}] Starting background task for file: {filename}")
+    
+    db = SessionLocal()
     try:
-        TASK_STORE[task_id]["status"] = "processing"
+        # Update status to processing
+        print(f"[PDF Import {task_id}] Updating status to 'processing'")
+        task = db.query(ImportTask).filter(ImportTask.id == task_id).first()
+        if task:
+            task.status = "processing"
+            db.commit()
+            print(f"[PDF Import {task_id}] Status updated to 'processing'")
+        else:
+            print(f"[PDF Import {task_id}] ERROR: Task not found in database!")
+            return
         
+        # Extract text from PDF
+        print(f"[PDF Import {task_id}] Extracting text from PDF ({len(file_content)} bytes)")
         text = extract_text_from_pdf(file_content)
         if not text:
-            TASK_STORE[task_id]["status"] = "failed"
-            TASK_STORE[task_id]["error"] = "Could not extract text from PDF"
+            print(f"[PDF Import {task_id}] ERROR: Could not extract text from PDF")
+            task.status = "failed"
+            task.error = "Could not extract text from PDF"
+            db.commit()
             return
+        
+        print(f"[PDF Import {task_id}] Extracted {len(text)} characters from PDF")
 
+        # Parse recipe with LLM
+        print(f"[PDF Import {task_id}] Parsing recipe with LLM...")
         recipe_data = parse_recipe_with_llm(text)
         
         # Check if parsing resulted in an error
         if recipe_data.get("name", "").startswith("Error"):
-            TASK_STORE[task_id]["status"] = "failed"
-            TASK_STORE[task_id]["error"] = recipe_data.get("description", "Unknown error occurred")
+            error_msg = recipe_data.get("description", "Unknown error occurred")
+            print(f"[PDF Import {task_id}] ERROR: LLM parsing failed: {error_msg}")
+            task.status = "failed"
+            task.error = error_msg
+            db.commit()
             return
         
+        print(f"[PDF Import {task_id}] Successfully parsed recipe: {recipe_data.get('name')}")
         recipe_data["source_file"] = filename
         
-        TASK_STORE[task_id]["status"] = "completed"
-        TASK_STORE[task_id]["result"] = recipe_data
+        # Save result
+        print(f"[PDF Import {task_id}] Saving result to database")
+        task.status = "completed"
+        task.result = json.dumps(recipe_data)
+        db.commit()
+        print(f"[PDF Import {task_id}] Task completed successfully")
         
     except Exception as e:
-        print(f"Error in background task {task_id}: {e}")
-        TASK_STORE[task_id]["status"] = "failed"
-        TASK_STORE[task_id]["error"] = str(e)
+        print(f"[PDF Import {task_id}] EXCEPTION: {type(e).__name__}: {e}")
+        import traceback
+        traceback.print_exc()
+        task = db.query(ImportTask).filter(ImportTask.id == task_id).first()
+        if task:
+            task.status = "failed"
+            task.error = str(e)
+            db.commit()
+    finally:
+        db.close()
+        print(f"[PDF Import {task_id}] Background task finished")
 
 
 def extract_text_from_pdf(file_content: bytes) -> str:

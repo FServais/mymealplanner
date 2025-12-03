@@ -1,4 +1,5 @@
 import uuid
+import json
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Query, BackgroundTasks
 from sqlalchemy.orm import Session
 from typing import List, Optional
@@ -66,18 +67,22 @@ def delete_recipe(recipe_id: int, db: Session = Depends(database.get_db)):
 @router.post("/import/pdf")
 async def import_recipe_pdf(
     background_tasks: BackgroundTasks,
-    file: UploadFile = File(...)
+    file: UploadFile = File(...),
+    db: Session = Depends(database.get_db)
 ):
     content = await file.read()
     
     # Generate a unique task ID
     task_id = str(uuid.uuid4())
     
-    # Initialize task status
-    services.TASK_STORE[task_id] = {
-        "status": "pending",
-        "created_at": services.time.time()
-    }
+    # Create task in database
+    import_task = models.ImportTask(
+        id=task_id,
+        status="pending",
+        filename=file.filename
+    )
+    db.add(import_task)
+    db.commit()
     
     # Start background task
     background_tasks.add_task(
@@ -90,9 +95,19 @@ async def import_recipe_pdf(
     return {"task_id": task_id, "status": "pending"}
 
 @router.get("/import/status/{task_id}")
-def get_import_status(task_id: str):
-    task = services.TASK_STORE.get(task_id)
+def get_import_status(task_id: str, db: Session = Depends(database.get_db)):
+    task = db.query(models.ImportTask).filter(models.ImportTask.id == task_id).first()
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
     
-    return task
+    response = {
+        "status": task.status,
+        "created_at": task.created_at.isoformat() if task.created_at else None
+    }
+    
+    if task.status == "completed" and task.result:
+        response["result"] = json.loads(task.result)
+    elif task.status == "failed" and task.error:
+        response["error"] = task.error
+    
+    return response
