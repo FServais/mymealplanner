@@ -77,7 +77,7 @@ write_files:
           --workers 2 \
           --worker-class uvicorn.workers.UvicornWorker \
           --bind 127.0.0.1:8000 \
-          --timeout 120 \
+          --timeout 600 \
           --access-logfile /var/log/mealplanner/access.log \
           --error-logfile /var/log/mealplanner/error.log
       StandardOutput=journal
