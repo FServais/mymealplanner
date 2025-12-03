@@ -302,7 +302,7 @@ def parse_recipe_with_llm(text: str, api_key: str = None, provider: str = "opena
 
     try:
         raw_response = client.chat.completions.create(
-            model="gpt-5-mini",
+            model="gpt-5-nano",
             messages=[
                 {"role": "system", "content": RAW_ING_SYSTEM_PROMPT},
                 {
