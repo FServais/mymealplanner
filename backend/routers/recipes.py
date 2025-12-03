@@ -18,9 +18,9 @@ def create_recipe(recipe: schemas.RecipeCreate, db: Session = Depends(database.g
 
 @router.get("/", response_model=List[schemas.Recipe])
 def read_recipes(
-    skip: int = 0, 
-    limit: int = 100, 
-    ingredients: List[str] = Query(None), 
+    skip: int = 0,
+    limit: int = 100,
+    ingredients: List[str] = Query(None),
     search: Optional[str] = None,
     source_file: Optional[str] = None,
     db: Session = Depends(database.get_db)
@@ -35,7 +35,7 @@ def read_ingredients(db: Session = Depends(database.get_db)):
 
 @router.get("/count")
 def read_recipe_count(
-    ingredients: List[str] = Query(None), 
+    ingredients: List[str] = Query(None),
     search: Optional[str] = None,
     source_file: Optional[str] = None,
     db: Session = Depends(database.get_db)
@@ -68,13 +68,13 @@ async def import_recipe_pdf(file: UploadFile = File(...)):
     text = services.extract_text_from_pdf(content)
     if not text:
         raise HTTPException(status_code=400, detail="Could not extract text from PDF")
-    
+
     recipe_data = services.parse_recipe_with_llm(text)
-    
+
     # Check if parsing resulted in an error
     if recipe_data.get("name", "").startswith("Error"):
         error_detail = recipe_data.get("description", "Unknown error occurred")
         raise HTTPException(status_code=500, detail=error_detail)
-    
+
     recipe_data["source_file"] = file.filename
     return recipe_data

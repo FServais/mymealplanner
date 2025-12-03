@@ -12,7 +12,7 @@ API_URL = "http://localhost:8000"
 
 def test_filter():
     print("Testing source_file filter...")
-    
+
     # 1. Create a recipe with a unique source_file
     unique_file = "unique_test_file_v999.pdf"
     recipe_data = {
@@ -21,23 +21,23 @@ def test_filter():
         "ingredients": [],
         "instructions": []
     }
-    
+
     try:
         # Create
         response = httpx.post(f"{API_URL}/recipes/", json=recipe_data)
         response.raise_for_status()
         print("Created test recipe.")
-        
+
         # 2. Filter by it
         response = httpx.get(f"{API_URL}/recipes/", params={"source_file": unique_file})
         response.raise_for_status()
         results = response.json()
-        
+
         if len(results) == 1 and results[0]["source_file"] == unique_file:
             print("SUCCESS: Filter returned correct recipe.")
         else:
             print(f"FAILURE: Filter returned {len(results)} results.")
-            
+
         # 3. Filter by non-existent
         response = httpx.get(f"{API_URL}/recipes/", params={"source_file": "non_existent.pdf"})
         results = response.json()

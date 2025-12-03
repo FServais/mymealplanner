@@ -12,7 +12,7 @@ API_URL = "http://localhost:8000"
 
 def test_search():
     print("Testing Recipe Search...")
-    
+
     # 1. Search for a known recipe
     # Assuming we have "Sauté" from previous output
     query = "Sauté"

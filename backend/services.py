@@ -188,29 +188,29 @@ def format_raw_lines_for_prompt(raw_lines):
 def parse_recipe_with_llm(text: str, api_key: str = None, provider: str = "openai"):
     """
     Parses recipe text using an LLM to extract structured recipe data.
-    
+
     This function uses a two-stage LLM process:
     1. First, it extracts raw ingredient lines with serving hints
     2. Then, it parses the full recipe to extract name, ingredients (for 2 people), and instructions
-    
+
     Args:
         text: Raw text extracted from a recipe PDF
         api_key: OpenAI API key (defaults to OPENAI_API_KEY environment variable)
         provider: LLM provider to use (currently only "openai" is supported)
-    
+
     Returns:
         dict: A dictionary containing:
             - name (str): The recipe name
             - description (str): Recipe description
             - ingredients (list): List of dicts with 'name' and 'quantity' keys
             - instructions (list): List of dicts with 'step_number' and 'text' keys
-        
+
         Returns mock data if no API key is provided.
         Returns error data if the LLM request fails.
     """
     if not api_key:
         api_key = os.environ.get("OPENAI_API_KEY")
-    
+
     if not api_key:
         print("No API key provided. Returning mock data.")
         return {
@@ -290,7 +290,7 @@ def parse_recipe_with_llm(text: str, api_key: str = None, provider: str = "opena
             # If unit is present and not already part of quantity string, append it
             if unit and unit.lower() not in qty.lower():
                 qty = f"{qty} {unit}"
-            
+
             recipe_data["ingredients"].append({
                 "name": ing.get("name"),
                 "quantity": qty
@@ -313,7 +313,7 @@ def parse_recipe_with_llm(text: str, api_key: str = None, provider: str = "opena
             "ingredients": [],
             "instructions": []
         }
-    
+
     except RateLimitError as e:
         error_msg = f"Rate limit exceeded. Please try again later."
         print(f"OpenAI RateLimitError: {e}")
@@ -323,7 +323,7 @@ def parse_recipe_with_llm(text: str, api_key: str = None, provider: str = "opena
             "ingredients": [],
             "instructions": []
         }
-    
+
     except BadRequestError as e:
         error_msg = f"Invalid request: {str(e)}"
         print(f"OpenAI BadRequestError: {e}")
@@ -333,7 +333,7 @@ def parse_recipe_with_llm(text: str, api_key: str = None, provider: str = "opena
             "ingredients": [],
             "instructions": []
         }
-    
+
     except APIConnectionError as e:
         error_msg = f"Failed to connect to OpenAI API. Check network connection."
         print(f"OpenAI APIConnectionError: {e}")
@@ -353,7 +353,7 @@ def parse_recipe_with_llm(text: str, api_key: str = None, provider: str = "opena
             "ingredients": [],
             "instructions": []
         }
-    
+
     except Exception as e:
         error_msg = f"Unexpected error: {str(e)}"
         print(f"Unexpected error parsing recipe with LLM: {e}")
@@ -370,7 +370,7 @@ from fractions import Fraction
 def parse_quantity(quantity_str: str):
     """
     Parses a quantity string into (amount, unit).
-    Examples: 
+    Examples:
     "200 g" -> (200.0, "g")
     "1/2 cup" -> (0.5, "cup")
     "2" -> (2.0, "")
@@ -378,13 +378,13 @@ def parse_quantity(quantity_str: str):
     """
     if not quantity_str:
         return 0.0, ""
-    
+
     quantity_str = quantity_str.strip().lower()
-    
+
     # Match number (int, float, or fraction) at start
     # Regex: starts with digits, optional decimal or fraction part
     match = re.match(r"^(\d+(?:/\d+)?|\d+(?:\.\d+)?)\s*(.*)$", quantity_str)
-    
+
     if match:
         amount_str, unit = match.groups()
         try:
@@ -395,28 +395,28 @@ def parse_quantity(quantity_str: str):
             return amount, unit.strip()
         except ValueError:
             pass
-            
+
     return 0.0, quantity_str
 
 def generate_shopping_list(recipes: List[dict]) -> List[dict]:
     shopping_list = {}
-    
+
     for recipe in recipes:
         for ingredient in recipe.ingredients:
             name = ingredient.name.lower().strip()
             qty_str = ingredient.quantity
-            
+
             amount, unit = parse_quantity(qty_str)
-            
+
             # Key for aggregation: (name, unit)
             # This avoids merging "grams" with "pieces" if conversion isn't possible
             key = (name, unit)
-            
+
             if key in shopping_list:
                 shopping_list[key] += amount
             else:
                 shopping_list[key] = amount
-                
+
     # Format for display
     final_list = []
     for (name, unit), total_amount in shopping_list.items():
@@ -425,13 +425,13 @@ def generate_shopping_list(recipes: List[dict]) -> List[dict]:
             amount_display = str(int(total_amount))
         else:
             amount_display = f"{total_amount:.2f}".rstrip('0').rstrip('.')
-            
+
         full_quantity = f"{amount_display} {unit}".strip()
         final_list.append({"name": name, "quantity": full_quantity})
-        
+
     # Sort by name
     final_list.sort(key=lambda x: x['name'])
-        
+
     return final_list
 
 def suggest_ingredient_duplicates(ingredients: List[str]) -> List[dict]:
@@ -441,7 +441,7 @@ def suggest_ingredient_duplicates(ingredients: List[str]) -> List[dict]:
     and 'sources' (list of variations to merge).
     """
     print(f"[suggest_ingredient_duplicates] Starting with {len(ingredients)} ingredients")
-    
+
     if not ingredients:
         print("[suggest_ingredient_duplicates] No ingredients provided, returning empty list")
         return []
@@ -449,24 +449,24 @@ def suggest_ingredient_duplicates(ingredients: List[str]) -> List[dict]:
     # Pre-filter: Find potential duplicates using string similarity
     # This reduces the number of ingredients sent to the LLM
     print("[suggest_ingredient_duplicates] Pre-filtering with similarity check...")
-    
+
     from difflib import SequenceMatcher
-    
+
     def similarity(a: str, b: str) -> float:
         """Calculate similarity ratio between two strings (0.0 to 1.0)"""
         return SequenceMatcher(None, a.lower(), b.lower()).ratio()
-    
+
     # Group ingredients that are similar to each other
     SIMILARITY_THRESHOLD = 0.7  # 70% similar
     potential_duplicates = set()
-    
+
     for i, ing1 in enumerate(ingredients):
         for ing2 in ingredients[i+1:]:
             sim = similarity(ing1, ing2)
             if sim >= SIMILARITY_THRESHOLD:
                 potential_duplicates.add(ing1)
                 potential_duplicates.add(ing2)
-    
+
     # If we found potential duplicates, only send those to the LLM
     if potential_duplicates:
         # Convert to list and remove any exact duplicates (case-insensitive)
@@ -495,13 +495,13 @@ def suggest_ingredient_duplicates(ingredients: List[str]) -> List[dict]:
     I will provide a list of ingredient names that are potentially similar.
     Your task is to identify synonyms, misspellings, plural variations, or language variations that refer to the same ingredient.
     Group them together and suggest a single "canonical" name for the group (preferably the most common, simple, singular form in French or English, matching the input language).
-    
+
     Ignore ingredients that are distinct. Only output groups where there are at least 2 variations.
-    
+
     Output format: JSON object with a key "duplicates" containing a list of objects, each with:
     - "target": string (the canonical name)
     - "sources": list of strings (the variations found in the input list, INCLUDING the target if it was in the list)
-    
+
     Example input: ["Tomate", "Tomates", "Tomato", "Beef", "Boeuf"]
     Example output: {
         "duplicates": [
@@ -510,10 +510,10 @@ def suggest_ingredient_duplicates(ingredients: List[str]) -> List[dict]:
         ]
     }
     """
-    
+
     ingredients_text = json.dumps(filtered_ingredients)
     print(f"[suggest_ingredient_duplicates] Prepared ingredient list, length: {len(ingredients_text)} chars")
-    
+
     try:
         print("[suggest_ingredient_duplicates] Calling OpenAI API...")
         response = client.chat.completions.create(
@@ -524,19 +524,19 @@ def suggest_ingredient_duplicates(ingredients: List[str]) -> List[dict]:
             ],
             response_format={"type": "json_object"}
         )
-        
+
         print("[suggest_ingredient_duplicates] Received response from OpenAI")
         content = response.choices[0].message.content
         print(f"[suggest_ingredient_duplicates] Response content: {content[:200]}...")
-        
+
         result = json.loads(content)
         print(f"[suggest_ingredient_duplicates] Parsed JSON result, keys: {result.keys()}")
-        
+
         duplicates = result.get("duplicates", [])
         print(f"[suggest_ingredient_duplicates] Found {len(duplicates)} duplicate groups")
-        
+
         return duplicates
-        
+
     except Exception as e:
         print(f"[suggest_ingredient_duplicates] ERROR: {type(e).__name__}: {e}")
         import traceback

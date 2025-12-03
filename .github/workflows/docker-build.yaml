@@ -33,7 +33,7 @@ jobs:
           echo "OWNER_LC=${OWNER,,}" >>${GITHUB_ENV}
         env:
           OWNER: '${{ github.repository_owner }}'
-          
+
       - name: Extract version information
         id: version
         run: |

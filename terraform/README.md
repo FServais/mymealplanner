@@ -9,11 +9,11 @@ Deploy the Meal Planner application to a single DigitalOcean Droplet using Terra
 ## 📋 Prerequisites
 
 1. **DigitalOcean Account**: [Sign up here](https://www.digitalocean.com/)
-2. **DigitalOcean API Token**: 
+2. **DigitalOcean API Token**:
    - Go to API → Tokens/Keys → Generate New Token
    - Give it read/write permissions
    - Save the token securely
-3. **SSH Key**: 
+3. **SSH Key**:
    ```bash
    # Generate if you don't have one
    ssh-keygen -t rsa -b 4096 -C "your_email@example.com"

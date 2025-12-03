@@ -28,11 +28,11 @@ def normalize_ingredients():
     try:
         print("Scanning ingredients for country suffixes...")
         ingredients = db.query(Ingredient).all()
-        
+
         # Regex to match space followed by 2 uppercase letters at the end (e.g., " BE", " FR")
         # You can add more codes or make it stricter if needed
         suffix_pattern = re.compile(r'\s+(BE|FR|NL|DE|IT|ES|UK|US|EU)$')
-        
+
         count = 0
         for ing in ingredients:
             original_name = ing.name
@@ -43,14 +43,14 @@ def normalize_ingredients():
                     print(f"Renaming '{original_name}' -> '{new_name}'")
                     ing.name = new_name
                     count += 1
-        
+
         if count > 0:
             print(f"Committing {count} changes...")
             db.commit()
             print("Done.")
         else:
             print("No ingredients found needing normalization.")
-            
+
     except Exception as e:
         print(f"Error: {e}")
         db.rollback()

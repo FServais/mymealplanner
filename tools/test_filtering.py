@@ -12,7 +12,7 @@ API_URL = "http://localhost:8000"
 
 def test_filtering():
     print("Testing Ingredient Filtering...")
-    
+
     # 1. Get all ingredients
     try:
         response = httpx.get(f"{API_URL}/recipes/ingredients")

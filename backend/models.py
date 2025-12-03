@@ -26,7 +26,7 @@ class Recipe(Base):
     name = Column(String, index=True)
     description = Column(Text, nullable=True)
     source_file = Column(String, nullable=True)
-    
+
     ingredients = relationship("Ingredient", back_populates="recipe", cascade="all, delete-orphan")
     instructions = relationship("Instruction", back_populates="recipe", cascade="all, delete-orphan")
     meal_plans = relationship("MealPlan", secondary=meal_plan_recipes, back_populates="recipes")

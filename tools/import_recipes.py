@@ -33,7 +33,7 @@ def check_if_exists(filename):
 
 def import_recipe(file_path: Path):
     print(f"Processing {file_path.name}...")
-    
+
     # 1. Extract and Parse (Import)
     try:
         with open(file_path, "rb") as f:
@@ -75,7 +75,7 @@ def main():
     parser.add_argument("--start", type=int, help="Start from this version number (inclusive)")
     parser.add_argument("--end", type=int, help="End at this version number (inclusive)")
     parser.add_argument("--resume", action="store_true", help="Skip files that are already in the database")
-    
+
     args = parser.parse_args()
 
     directory = Path(args.directory)
@@ -91,7 +91,7 @@ def main():
 
     # Sort by version number
     pdf_files.sort(key=lambda p: extract_version(p.name))
-    
+
     print(f"Found {len(pdf_files)} PDF files.")
 
     # Filter by range
@@ -99,7 +99,7 @@ def main():
         pdf_files = [p for p in pdf_files if extract_version(p.name) >= args.start]
     if args.end is not None:
         pdf_files = [p for p in pdf_files if extract_version(p.name) <= args.end]
-        
+
     print(f"Processing {len(pdf_files)} files after filtering.")
 
     for pdf_file in pdf_files:
@@ -107,7 +107,7 @@ def main():
             if check_if_exists(pdf_file.name):
                 print(f"Skipping {pdf_file.name} (already exists)")
                 continue
-                
+
         import_recipe(pdf_file)
         time.sleep(1) # Be nice to the API/LLM
 

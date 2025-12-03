@@ -15,6 +15,6 @@ def generate_shopping_list(recipe_ids: List[int] = Body(...), db: Session = Depe
         recipe = crud.get_recipe(db, r_id)
         if recipe:
             recipes.append(recipe)
-    
+
     shopping_list = services.generate_shopping_list(recipes)
     return shopping_list

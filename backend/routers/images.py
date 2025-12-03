@@ -18,7 +18,7 @@ IMAGE_DIR.mkdir(parents=True, exist_ok=True)
 @router.get("/thumbnails/{filename}")
 async def get_thumbnail(filename: str):
     logger.info(f"Thumbnail request received for: {filename}")
-    
+
     # Sanitize filename to prevent directory traversal (normalize and check)
     try:
         candidate_path = (IMAGE_DIR / filename).resolve()
@@ -36,21 +36,21 @@ async def get_thumbnail(filename: str):
     if local_path.exists():
         logger.info(f"Cache hit - serving from local storage: {local_path}")
         return FileResponse(local_path, media_type="image/jpeg")
-    
+
     logger.info(f"Cache miss - file not found locally: {local_path}")
-    
+
     # If not, try to download it from Efarmz
     # Expected filename format: v804.jpg
     # Efarmz URL: https://cdn.efarmz.be/cdn-cgi/image/quality=75,f=auto,width=384/https://cdn.efarmz.be/art/v804.jpg
-    
+
     name_without_ext = os.path.splitext(filename)[0]
     cdn_url = f"https://cdn.efarmz.be/cdn-cgi/image/quality=75,f=auto,width=384/https://cdn.efarmz.be/art/{name_without_ext}.jpg"
     logger.info(f"Attempting to download from CDN: {cdn_url}")
-    
+
     try:
         response = requests.get(cdn_url, timeout=10)
         logger.info(f"CDN response status: {response.status_code}")
-        
+
         if response.status_code == 200:
             logger.info(f"Successfully downloaded image, saving to: {local_path}")
             with open(local_path, "wb") as f:

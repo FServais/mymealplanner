@@ -17,22 +17,22 @@ write_files:
     content: |
       OPENAI_API_KEY=${openai_api_key}
       GEMINI_API_KEY=${gemini_api_key}
-  
+
   - path: /etc/nginx/sites-available/mealplanner
     permissions: '0644'
     content: |
       server {
           listen 80;
           server_name ${app_domain != "" ? app_domain : "_"};
-          
+
           client_max_body_size 10M;
-          
+
           # Frontend - serve React static files
           location / {
               root /var/www/mealplanner;
               try_files $uri $uri/ /index.html;
           }
-          
+
           # Backend API - proxy to FastAPI
           location /api {
               proxy_pass http://127.0.0.1:8000;
@@ -45,7 +45,7 @@ write_files:
               proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
               proxy_set_header X-Forwarded-Proto $scheme;
           }
-          
+
           # Backend root endpoints (recipes, meal-planner, etc)
           location ~ ^/(recipes|meal-planner|meal-plans|tools|images|thumbnails|docs|openapi.json) {
               proxy_pass http://127.0.0.1:8000;
@@ -59,14 +59,14 @@ write_files:
               proxy_set_header X-Forwarded-Proto $scheme;
           }
       }
-  
+
   - path: /etc/systemd/system/mealplanner-backend.service
     permissions: '0644'
     content: |
       [Unit]
       Description=Meal Planner Backend API
       After=network.target
-      
+
       [Service]
       Type=notify
       User=mealplanner
@@ -84,83 +84,83 @@ write_files:
       StandardError=journal
       Restart=always
       RestartSec=10
-      
+
       [Install]
       WantedBy=multi-user.target
-  
+
   - path: /home/mealplanner/deploy.sh
     permissions: '0755'
     owner: mealplanner:mealplanner
     content: |
       #!/bin/bash
       set -e
-      
+
       echo "Updating Meal Planner application..."
-      
+
       cd /home/mealplanner/mymealplanner
-      
+
       # Pull latest code (if using git)
       # git pull origin main
-      
+
       # Update backend dependencies
       echo "Updating backend..."
       cd backend
       source venv/bin/activate
       pip install -r requirements.txt
       deactivate
-      
+
       # Rebuild frontend
       echo "Building frontend..."
       cd ../frontend
       npm install
       VITE_API_URL=https://meal.servais-devos.com npm run build
-      
+
       # Copy to nginx directory
       sudo rm -rf /var/www/mealplanner/*
       sudo cp -r dist/* /var/www/mealplanner/
-      
+
       # Restart backend service
       echo "Restarting backend service..."
       sudo systemctl restart mealplanner-backend
-      
+
       echo "Deployment complete!"
 
 runcmd:
   # Install Node.js 18
   - curl -fsSL https://deb.nodesource.com/setup_18.x | bash -
   - apt-get install -y nodejs
-  
+
   # Create mealplanner user
   - useradd -m -s /bin/bash mealplanner
   - mkdir -p /var/log/mealplanner
   - chown mealplanner:mealplanner /var/log/mealplanner
-  
+
   # Create app directory structure
   - mkdir -p /home/mealplanner/mymealplanner
   - mkdir -p /var/www/mealplanner
   - chown -R mealplanner:mealplanner /home/mealplanner/mymealplanner
   - chown -R www-data:www-data /var/www/mealplanner
-  
+
   # Note: At this point, you need to upload your code manually
   # This can be done via SCP, git clone, or other methods
   # The following commands assume you'll upload the code separately
-  
+
   # Configure Nginx
   - rm -f /etc/nginx/sites-enabled/default
   - ln -sf /etc/nginx/sites-available/mealplanner /etc/nginx/sites-enabled/
   - nginx -t
   - systemctl restart nginx
-  
+
   # Enable and start backend service when code is ready
   # systemctl enable mealplanner-backend
   # systemctl start mealplanner-backend
-  
+
   # Configure firewall (UFW)
   - ufw --force enable
   - ufw allow 22/tcp
   - ufw allow 80/tcp
   - ufw allow 443/tcp
-  
+
   # Create placeholder index.html
   - echo '<html><body><h1>Meal Planner - Upload your code to /home/mealplanner/mymealplanner</h1></body></html>' > /var/www/mealplanner/index.html
 
