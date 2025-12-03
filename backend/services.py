@@ -16,14 +16,79 @@ def extract_text_from_pdf(file_content: bytes) -> str:
         print(f"Error extracting text: {e}")
         return ""
 
+RAW_ING_SYSTEM_PROMPT = """
+You are a specialized ingredient line extractor.
+
+Goal:
+From raw text extracted from a recipe PDF, capture ALL lines that look like ingredients,
+without filtering by serving size.
+
+What to capture:
+- Any line or row that looks like an ingredient: typically contains a quantity and a food name.
+- Include lines from ingredient sections and tables (e.g. with columns for 2 pers, 3-4 pers, etc.).
+- Ignore headers like "Ingrédients", "Dans la box", "Préparation", page numbers, disclaimers.
+
+For each ingredient line:
+- raw_text: the raw line or row as it appears in the text (you may join broken lines).
+- serving_hint: any hint about serving size if you can infer it from the context, such as:
+    "2 pers", "2 personnes", "2p", "3-4 pers", etc.
+  If there is no clear hint, use null.
+
+Output:
+- Always respond by CALLING the extract_raw_ingredients function with arguments matching its JSON schema.
+- Do NOT answer in free text.
+""".strip()
+
+RAW_ING_TOOLS = [
+    {
+        "type": "function",
+        "function": {
+            "name": "extract_raw_ingredients",
+            "description": "Capture all raw ingredient-like lines from the recipe text.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "lines": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "raw_text": {
+                                    "type": "string",
+                                    "description": "Raw ingredient line or row as seen in the text."
+                                },
+                                "serving_hint": {
+                                    "type": ["string", "null"],
+                                    "description": "Serving size hint for this line, e.g. '2 pers', '3-4 pers', or null."
+                                }
+                            },
+                            "required": ["raw_text", "serving_hint"],
+                            "additionalProperties": False
+                        }
+                    }
+                },
+                "required": ["lines"],
+                "additionalProperties": False
+            }
+        }
+    }
+]
+
 PARSE_SYSTEM_PROMPT = """
 You are a specialized recipe parser.
 
 Goal:
-From raw text extracted from a PDF, extract:
+From raw text extracted from a PDF, and from a list of raw ingredient lines,
+extract:
 1. The clean recipe name.
 2. A structured list of ingredients for 2 people only.
 3. A clean, ordered list of instructions.
+
+You are given:
+- The full raw recipe text (noisy PDF extraction).
+- A pre-extracted list of raw ingredient lines with serving-size hints.
+
+Use the raw ingredient lines as your primary source for ingredients to avoid missing any.
 
 Recipe name rules:
 - Identify the main recipe title.
@@ -103,6 +168,13 @@ TOOLS = [
     }
 ]
 
+def format_raw_lines_for_prompt(raw_lines):
+    formatted = []
+    for i, line in enumerate(raw_lines, start=1):
+        hint = line["serving_hint"] or "unknown"
+        formatted.append(f"{i}. [{hint}] {line['raw_text']}")
+    return "\n".join(formatted)
+
 def parse_recipe_with_llm(text: str, api_key: str = None, provider: str = "openai"):
     if not api_key:
         api_key = os.environ.get("OPENAI_API_KEY")
@@ -123,13 +195,42 @@ def parse_recipe_with_llm(text: str, api_key: str = None, provider: str = "opena
     client = OpenAI(api_key=api_key)
 
     try:
+        raw_response = client.chat.completions.create(
+            model="gpt-5-mini",
+            messages=[
+                {"role": "system", "content": RAW_ING_SYSTEM_PROMPT},
+                {
+                    "role": "user",
+                    "content": f"Here is the text extracted from my PDF:\n\n{text}"
+                },
+            ],
+            tools=RAW_ING_TOOLS,
+            tool_choice={
+                "type": "function",
+                "function": {"name": "extract_raw_ingredients"},
+            },
+            timeout=600.0,
+        )
+
+        tool_call = raw_response.choices[0].message.tool_calls[0]
+        raw_args = json.loads(tool_call.function.arguments)
+
+        raw_lines = raw_args["lines"]
+
+        raw_lines_text = format_raw_lines_for_prompt(raw_lines)
+
         response = client.chat.completions.create(
             model="gpt-5-mini",
             messages=[
                 {"role": "system", "content": PARSE_SYSTEM_PROMPT},
                 {
                     "role": "user",
-                    "content": f"Here is the text extracted from my PDF:\n\n{text}"
+                    "content": (
+                        "Here is the full text extracted from my PDF:\n\n"
+                        f"{text}\n\n"
+                        "Here is a pre-extracted list of raw ingredient lines with serving hints:\n\n"
+                        f"{raw_lines_text}"
+                    ),
                 },
             ],
             tools=TOOLS,
