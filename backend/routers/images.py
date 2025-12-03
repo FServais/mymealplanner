@@ -19,11 +19,19 @@ IMAGE_DIR.mkdir(parents=True, exist_ok=True)
 async def get_thumbnail(filename: str):
     logger.info(f"Thumbnail request received for: {filename}")
     
-    # Sanitize filename to prevent directory traversal
-    filename = os.path.basename(filename)
-    local_path = IMAGE_DIR / filename
-    logger.info(f"Sanitized filename: {filename}, local path: {local_path}")
-    
+    # Sanitize filename to prevent directory traversal (normalize and check)
+    try:
+        candidate_path = (IMAGE_DIR / filename).resolve()
+        image_dir_resolved = IMAGE_DIR.resolve()
+        if not str(candidate_path).startswith(str(image_dir_resolved)):
+            logger.warning(f"Attempt to access file outside image directory: {candidate_path}")
+            raise HTTPException(status_code=400, detail="Invalid image filename")
+    except Exception as e:
+        logger.error(f"Failed to resolve path for {filename}: {e}")
+        raise HTTPException(status_code=400, detail="Invalid image filename")
+    local_path = candidate_path
+    logger.info(f"Sanitized filename: {filename}, resolved local path: {local_path}")
+
     # If file exists locally, serve it
     if local_path.exists():
         logger.info(f"Cache hit - serving from local storage: {local_path}")
