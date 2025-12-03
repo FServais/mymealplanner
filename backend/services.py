@@ -3,7 +3,13 @@ from typing import List
 import pypdf
 import io
 import json
-from openai import OpenAI
+from openai import (
+    OpenAI,
+    AuthenticationError,
+    RateLimitError,
+    BadRequestError,
+    APIConnectionError,
+)
 
 def extract_text_from_pdf(file_content: bytes) -> str:
     try:
@@ -169,6 +175,10 @@ TOOLS = [
 ]
 
 def format_raw_lines_for_prompt(raw_lines):
+    """
+    Formats a list of raw ingredient lines into a string for the LLM prompt.
+    Each line is prefixed with its index and serving hint.
+    """
     formatted = []
     for i, line in enumerate(raw_lines, start=1):
         hint = line["serving_hint"] or "unknown"
@@ -176,6 +186,28 @@ def format_raw_lines_for_prompt(raw_lines):
     return "\n".join(formatted)
 
 def parse_recipe_with_llm(text: str, api_key: str = None, provider: str = "openai"):
+    """
+    Parses recipe text using an LLM to extract structured recipe data.
+    
+    This function uses a two-stage LLM process:
+    1. First, it extracts raw ingredient lines with serving hints
+    2. Then, it parses the full recipe to extract name, ingredients (for 2 people), and instructions
+    
+    Args:
+        text: Raw text extracted from a recipe PDF
+        api_key: OpenAI API key (defaults to OPENAI_API_KEY environment variable)
+        provider: LLM provider to use (currently only "openai" is supported)
+    
+    Returns:
+        dict: A dictionary containing:
+            - name (str): The recipe name
+            - description (str): Recipe description
+            - ingredients (list): List of dicts with 'name' and 'quantity' keys
+            - instructions (list): List of dicts with 'step_number' and 'text' keys
+        
+        Returns mock data if no API key is provided.
+        Returns error data if the LLM request fails.
+    """
     if not api_key:
         api_key = os.environ.get("OPENAI_API_KEY")
     
@@ -272,7 +304,7 @@ def parse_recipe_with_llm(text: str, api_key: str = None, provider: str = "opena
 
         return recipe_data
 
-    except OpenAI.AuthenticationError as e:
+    except AuthenticationError as e:
         error_msg = f"Authentication failed: Invalid API key or expired token"
         print(f"OpenAI AuthenticationError: {e}")
         return {
@@ -282,7 +314,7 @@ def parse_recipe_with_llm(text: str, api_key: str = None, provider: str = "opena
             "instructions": []
         }
     
-    except OpenAI.RateLimitError as e:
+    except RateLimitError as e:
         error_msg = f"Rate limit exceeded. Please try again later."
         print(f"OpenAI RateLimitError: {e}")
         return {
@@ -292,7 +324,7 @@ def parse_recipe_with_llm(text: str, api_key: str = None, provider: str = "opena
             "instructions": []
         }
     
-    except OpenAI.BadRequestError as e:
+    except BadRequestError as e:
         error_msg = f"Invalid request: {str(e)}"
         print(f"OpenAI BadRequestError: {e}")
         return {
@@ -302,7 +334,7 @@ def parse_recipe_with_llm(text: str, api_key: str = None, provider: str = "opena
             "instructions": []
         }
     
-    except OpenAI.APIConnectionError as e:
+    except APIConnectionError as e:
         error_msg = f"Failed to connect to OpenAI API. Check network connection."
         print(f"OpenAI APIConnectionError: {e}")
         return {
@@ -311,17 +343,7 @@ def parse_recipe_with_llm(text: str, api_key: str = None, provider: str = "opena
             "ingredients": [],
             "instructions": []
         }
-    
-    except OpenAI.APITimeoutError as e:
-        error_msg = f"Request timed out. The recipe may be too long or complex."
-        print(f"OpenAI APITimeoutError: {e}")
-        return {
-            "name": "Error: Request Timeout",
-            "description": error_msg,
-            "ingredients": [],
-            "instructions": []
-        }
-    
+
     except (KeyError, IndexError, json.JSONDecodeError) as e:
         error_msg = f"Failed to parse LLM response: {str(e)}"
         print(f"Response parsing error: {e}")
