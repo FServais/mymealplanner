@@ -13,7 +13,7 @@ variable "ssh_public_key_path" {
 variable "region" {
   description = "DigitalOcean region"
   type        = string
-  default     = "nyc3"
+  default     = "ams3"
 }
 
 variable "environment" {
