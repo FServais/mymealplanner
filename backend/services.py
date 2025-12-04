@@ -12,16 +12,23 @@ from openai import (
     APIConnectionError,
 )
 from sqlalchemy.orm import Session
+import google.generativeai as genai
 
-def process_pdf_import_task(task_id: str, file_content: bytes, filename: str):
+def process_pdf_import_task(task_id: str, file_content: bytes, filename: str, provider: str = "openai"):
     """
     Background task to process PDF import.
     Updates the database with progress and result.
+
+    Args:
+        task_id: Unique identifier for the import task
+        file_content: Raw PDF file bytes
+        filename: Original filename of the PDF
+        provider: LLM provider to use ("openai" or "gemini", default: "openai")
     """
     from database import SessionLocal
     from models import ImportTask
     
-    print(f"[PDF Import {task_id}] Starting background task for file: {filename}")
+    print(f"[PDF Import {task_id}] Starting background task for file: {filename} (provider: {provider})")
     
     db = SessionLocal()
     try:
@@ -49,8 +56,8 @@ def process_pdf_import_task(task_id: str, file_content: bytes, filename: str):
         print(f"[PDF Import {task_id}] Extracted {len(text)} characters from PDF")
 
         # Parse recipe with LLM
-        print(f"[PDF Import {task_id}] Parsing recipe with LLM...")
-        recipe_data = parse_recipe_with_llm(text)
+        print(f"[PDF Import {task_id}] Parsing recipe with {provider.upper()} LLM...")
+        recipe_data = parse_recipe_with_llm(text, provider=provider)
         
         # Check if parsing resulted in an error
         if recipe_data.get("name", "").startswith("Error"):
@@ -263,14 +270,12 @@ def parse_recipe_with_llm(text: str, api_key: str = None, provider: str = "opena
     """
     Parses recipe text using an LLM to extract structured recipe data.
 
-    This function uses a two-stage LLM process:
-    1. First, it extracts raw ingredient lines with serving hints
-    2. Then, it parses the full recipe to extract name, ingredients (for 2 people), and instructions
+    This function dispatches to provider-specific implementations.
 
     Args:
         text: Raw text extracted from a recipe PDF
-        api_key: OpenAI API key (defaults to OPENAI_API_KEY environment variable)
-        provider: LLM provider to use (currently only "openai" is supported)
+        api_key: API key for the provider (defaults to environment variable)
+        provider: LLM provider to use ("openai" or "gemini", default: "openai")
 
     Returns:
         dict: A dictionary containing:
@@ -278,15 +283,28 @@ def parse_recipe_with_llm(text: str, api_key: str = None, provider: str = "opena
             - description (str): Recipe description
             - ingredients (list): List of dicts with 'name' and 'quantity' keys
             - instructions (list): List of dicts with 'step_number' and 'text' keys
+    """
+    provider = provider.lower().strip()
 
-        Returns mock data if no API key is provided.
-        Returns error data if the LLM request fails.
+    if provider == "gemini":
+        return _parse_with_gemini(text, api_key)
+    else:
+        return _parse_with_openai(text, api_key)
+
+
+def _parse_with_openai(text: str, api_key: str = None):
+    """
+    Parses recipe text using OpenAI's API.
+
+    Uses a two-stage process:
+    1. Extract raw ingredient lines with serving hints
+    2. Parse the full recipe
     """
     if not api_key:
         api_key = os.environ.get("OPENAI_API_KEY")
 
     if not api_key:
-        print("No API key provided. Returning mock data.")
+        print("No OpenAI API key provided. Returning mock data.")
         return {
             "name": "Mock Recipe (No API Key)",
             "description": "Please provide an OPENAI_API_KEY to use the real extraction.",
@@ -301,8 +319,9 @@ def parse_recipe_with_llm(text: str, api_key: str = None, provider: str = "opena
     client = OpenAI(api_key=api_key)
 
     try:
+        # Stage 1: Extract raw ingredient lines
         raw_response = client.chat.completions.create(
-            model="gpt-5-nano",
+            model="gpt-4o-mini",
             messages=[
                 {"role": "system", "content": RAW_ING_SYSTEM_PROMPT},
                 {
@@ -320,13 +339,12 @@ def parse_recipe_with_llm(text: str, api_key: str = None, provider: str = "opena
 
         tool_call = raw_response.choices[0].message.tool_calls[0]
         raw_args = json.loads(tool_call.function.arguments)
-
         raw_lines = raw_args["lines"]
-
         raw_lines_text = format_raw_lines_for_prompt(raw_lines)
 
+        # Stage 2: Parse full recipe
         response = client.chat.completions.create(
-            model="gpt-5-nano",
+            model="gpt-4o-mini",
             messages=[
                 {"role": "system", "content": PARSE_SYSTEM_PROMPT},
                 {
@@ -344,99 +362,188 @@ def parse_recipe_with_llm(text: str, api_key: str = None, provider: str = "opena
                 "type": "function",
                 "function": {"name": "extract_recipe"}
             },
-            timeout=600.0,  # 2 minute timeout
+            timeout=600.0,
         )
 
         tool_call = response.choices[0].message.tool_calls[0]
         function_args = json.loads(tool_call.function.arguments)
 
-        # Transform to RecipeCreate schema
-        recipe_data = {
-            "name": function_args.get("recipe_name"),
-            "description": "Imported from PDF via LLM",
-            "ingredients": [],
-            "instructions": []
-        }
-
-        for ing in function_args.get("ingredients", []):
-            qty = ing.get("quantity", "")
-            unit = ing.get("unit")
-            # If unit is present and not already part of quantity string, append it
-            if unit and unit.lower() not in qty.lower():
-                qty = f"{qty} {unit}"
-
-            recipe_data["ingredients"].append({
-                "name": ing.get("name"),
-                "quantity": qty
-            })
-
-        for idx, inst in enumerate(function_args.get("instructions", [])):
-            recipe_data["instructions"].append({
-                "step_number": idx + 1,
-                "text": inst
-            })
-
-        return recipe_data
+        return _transform_llm_response(function_args)
 
     except AuthenticationError as e:
-        error_msg = f"Authentication failed: Invalid API key or expired token"
+        error_msg = "Authentication failed: Invalid API key or expired token"
         print(f"OpenAI AuthenticationError: {e}")
-        return {
-            "name": "Error: Authentication Failed",
-            "description": error_msg,
-            "ingredients": [],
-            "instructions": []
-        }
+        return _error_response("Error: Authentication Failed", error_msg)
 
     except RateLimitError as e:
-        error_msg = f"Rate limit exceeded. Please try again later."
+        error_msg = "Rate limit exceeded. Please try again later."
         print(f"OpenAI RateLimitError: {e}")
-        return {
-            "name": "Error: Rate Limit Exceeded",
-            "description": error_msg,
-            "ingredients": [],
-            "instructions": []
-        }
+        return _error_response("Error: Rate Limit Exceeded", error_msg)
 
     except BadRequestError as e:
         error_msg = f"Invalid request: {str(e)}"
         print(f"OpenAI BadRequestError: {e}")
-        return {
-            "name": "Error: Invalid Request",
-            "description": error_msg,
-            "ingredients": [],
-            "instructions": []
-        }
+        return _error_response("Error: Invalid Request", error_msg)
 
     except APIConnectionError as e:
-        error_msg = f"Failed to connect to OpenAI API. Check network connection."
+        error_msg = "Failed to connect to OpenAI API. Check network connection."
         print(f"OpenAI APIConnectionError: {e}")
-        return {
-            "name": "Error: Connection Failed",
-            "description": error_msg,
-            "ingredients": [],
-            "instructions": []
-        }
+        return _error_response("Error: Connection Failed", error_msg)
 
     except (KeyError, IndexError, json.JSONDecodeError) as e:
         error_msg = f"Failed to parse LLM response: {str(e)}"
         print(f"Response parsing error: {e}")
-        return {
-            "name": "Error: Invalid LLM Response",
-            "description": error_msg,
-            "ingredients": [],
-            "instructions": []
-        }
+        return _error_response("Error: Invalid LLM Response", error_msg)
 
     except Exception as e:
         error_msg = f"Unexpected error: {str(e)}"
-        print(f"Unexpected error parsing recipe with LLM: {e}")
+        print(f"Unexpected error parsing recipe with OpenAI: {e}")
+        return _error_response("Error Parsing Recipe", error_msg)
+
+
+def _parse_with_gemini(text: str, api_key: str = None):
+    """
+    Parses recipe text using Google Gemini's API.
+
+    Uses a two-stage process similar to OpenAI:
+    1. Extract raw ingredient lines with serving hints
+    2. Parse the full recipe
+    """
+    if not api_key:
+        api_key = os.environ.get("GEMINI_API_KEY")
+
+    if not api_key:
+        print("No Gemini API key provided. Returning mock data.")
         return {
-            "name": "Error Parsing Recipe",
-            "description": error_msg,
-            "ingredients": [],
-            "instructions": []
+            "name": "Mock Recipe (No API Key)",
+            "description": "Please provide a GEMINI_API_KEY to use the real extraction.",
+            "ingredients": [
+                {"name": "Mock Ingredient", "quantity": "1 unit"}
+            ],
+            "instructions": [
+                {"step_number": 1, "text": "Add API key to environment variables."}
+            ]
         }
+
+    try:
+        genai.configure(api_key=api_key)
+        model = genai.GenerativeModel("gemini-2.5-flash-lite")
+
+        # Stage 1: Extract raw ingredient lines
+        raw_prompt = f"""{RAW_ING_SYSTEM_PROMPT}
+
+Here is the text extracted from my PDF:
+
+{text}
+
+Respond with a JSON object containing a "lines" array. Each item should have:
+- "raw_text": the ingredient line as seen in the text
+- "serving_hint": serving size hint like "2 pers" or null if unknown
+
+Example response:
+{{"lines": [{{"raw_text": "200g chicken", "serving_hint": "2 pers"}}, {{"raw_text": "1 onion", "serving_hint": null}}]}}
+"""
+
+        raw_response = model.generate_content(
+            raw_prompt,
+            generation_config=genai.GenerationConfig(
+                response_mime_type="application/json"
+            ),
+        )
+
+        raw_text = raw_response.text
+        raw_args = json.loads(raw_text)
+        raw_lines = raw_args.get("lines", [])
+        raw_lines_text = format_raw_lines_for_prompt(raw_lines)
+
+        # Stage 2: Parse full recipe
+        parse_prompt = f"""{PARSE_SYSTEM_PROMPT}
+
+Here is the full text extracted from my PDF:
+
+{text}
+
+Here is a pre-extracted list of raw ingredient lines with serving hints:
+
+{raw_lines_text}
+
+Respond with a JSON object containing:
+- "recipe_name": string
+- "ingredients": array of {{"name": string, "quantity": string, "unit": string or null}}
+- "instructions": array of strings (cooking steps)
+
+Example response:
+{{"recipe_name": "Pasta Carbonara", "ingredients": [{{"name": "Spaghetti", "quantity": "200", "unit": "g"}}], "instructions": ["Boil pasta", "Mix eggs with cheese"]}}
+"""
+
+        response = model.generate_content(
+            parse_prompt,
+            generation_config=genai.GenerationConfig(
+                response_mime_type="application/json"
+            )
+        )
+
+        function_args = json.loads(response.text)
+
+        return _transform_llm_response(function_args)
+
+    except json.JSONDecodeError as e:
+        error_msg = f"Failed to parse Gemini response as JSON: {str(e)}"
+        print(f"Gemini JSON parsing error: {e}")
+        return _error_response("Error: Invalid LLM Response", error_msg)
+
+    except Exception as e:
+        error_msg = f"Gemini API error: {str(e)}"
+        print(f"Unexpected error parsing recipe with Gemini: {e}")
+        return _error_response("Error Parsing Recipe", error_msg)
+
+
+def _transform_llm_response(function_args: dict) -> dict:
+    """
+    Transforms the raw LLM response into the RecipeCreate schema.
+    """
+    recipe_data = {
+        "name": function_args.get("recipe_name") or "Unnamed Recipe",
+        "description": "Imported from PDF via LLM",
+        "ingredients": [],
+        "instructions": []
+    }
+
+    for ing in function_args.get("ingredients", []):
+        name = ing.get("name")
+        if not name:
+            continue  # Skip ingredients without a name
+
+        qty = ing.get("quantity", "") or ""
+        unit = ing.get("unit")
+        if unit and unit.lower() not in qty.lower():
+            qty = f"{qty} {unit}"
+
+        recipe_data["ingredients"].append({
+            "name": str(name),
+            "quantity": str(qty) if qty else ""
+        })
+
+    for idx, inst in enumerate(function_args.get("instructions", [])):
+        if inst:  # Skip empty instructions
+            recipe_data["instructions"].append({
+                "step_number": idx + 1,
+                "text": str(inst)
+        })
+
+    return recipe_data
+
+
+def _error_response(name: str, description: str) -> dict:
+    """
+    Creates a standardized error response.
+    """
+    return {
+        "name": name,
+        "description": description,
+        "ingredients": [],
+        "instructions": []
+    }
 
 import re
 from fractions import Fraction
@@ -591,7 +698,7 @@ def suggest_ingredient_duplicates(ingredients: List[str]) -> List[dict]:
     try:
         print("[suggest_ingredient_duplicates] Calling OpenAI API...")
         response = client.chat.completions.create(
-            model="gpt-5-nano",
+            model="gpt-4o-mini",
             messages=[
                 {"role": "system", "content": prompt},
                 {"role": "user", "content": f"Here is the list of ingredients:\n{ingredients_text}"}

@@ -12,11 +12,11 @@ import time
 import re
 from pathlib import Path
 
-API_URL = "http://localhost:8000"
+API_URL = "https://meal.servais-devos.com"
 
 def extract_version(filename):
-    """Extracts the number XXX from vXXX.pdf"""
-    match = re.search(r'v(\d+)', filename)
+    """Extracts the number XXX from [letter]XXX.pdf"""
+    match = re.search(r'[a-zA-Z](\d+)', filename)
     if match:
         return int(match.group(1))
     return 0
@@ -31,14 +31,19 @@ def check_if_exists(filename):
     except Exception:
         return False
 
-def import_recipe(file_path: Path):
-    print(f"Processing {file_path.name}...")
+def import_recipe(file_path: Path, provider: str = "openai"):
+    print(f"Processing {file_path.name} (provider: {provider})...")
 
     # 1. Submit PDF for processing
     try:
         with open(file_path, "rb") as f:
             files = {"file": (file_path.name, f, "application/pdf")}
-            response = httpx.post(f"{API_URL}/recipes/import/pdf", files=files, timeout=30.0)
+            response = httpx.post(
+                f"{API_URL}/recipes/import/pdf",
+                files=files,
+                params={"provider": provider},
+                timeout=30.0
+            )
             response.raise_for_status()
             task_data = response.json()
             task_id = task_data.get("task_id")
@@ -101,6 +106,8 @@ def main():
     parser.add_argument("--start", type=int, help="Start from this version number (inclusive)")
     parser.add_argument("--end", type=int, help="End at this version number (inclusive)")
     parser.add_argument("--resume", action="store_true", help="Skip files that are already in the database")
+    parser.add_argument("--provider", type=str, default="openai", choices=["openai", "gemini"],
+                        help="LLM provider to use (default: openai)")
 
     args = parser.parse_args()
 
@@ -134,7 +141,7 @@ def main():
                 print(f"Skipping {pdf_file.name} (already exists)")
                 continue
 
-        import_recipe(pdf_file)
+        import_recipe(pdf_file, provider=args.provider)
         time.sleep(1) # Be nice to the API/LLM
 
 if __name__ == "__main__":

@@ -68,13 +68,19 @@ def delete_recipe(recipe_id: int, db: Session = Depends(database.get_db)):
 async def import_recipe_pdf(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
+    provider: str = Query("openai", description="LLM provider to use: 'openai' or 'gemini'"),
     db: Session = Depends(database.get_db)
 ):
     content = await file.read()
-    
+
+    # Validate provider
+    provider = provider.lower().strip()
+    if provider not in ["openai", "gemini"]:
+        raise HTTPException(status_code=400, detail="Invalid provider. Use 'openai' or 'gemini'.")
+
     # Generate a unique task ID
     task_id = str(uuid.uuid4())
-    
+
     # Create task in database
     import_task = models.ImportTask(
         id=task_id,
@@ -83,16 +89,17 @@ async def import_recipe_pdf(
     )
     db.add(import_task)
     db.commit()
-    
-    # Start background task
+
+    # Start background task with provider
     background_tasks.add_task(
         services.process_pdf_import_task,
         task_id,
         content,
-        file.filename
+        file.filename,
+        provider
     )
-    
-    return {"task_id": task_id, "status": "pending"}
+
+    return {"task_id": task_id, "status": "pending", "provider": provider}
 
 @router.get("/import/status/{task_id}")
 def get_import_status(task_id: str, db: Session = Depends(database.get_db)):

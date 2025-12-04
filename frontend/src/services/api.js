@@ -29,7 +29,7 @@ export const getRecipe = (id) => api.get(`/recipes/${id}`);
 export const createRecipe = (recipe) => api.post('/recipes/', recipe);
 export const updateRecipe = (id, recipe) => api.put(`/recipes/${id}`, recipe);
 export const deleteRecipe = (id) => api.delete(`/recipes/${id}`);
-export const importRecipePDF = (formData) => api.post('/recipes/import/pdf', formData, {
+export const importRecipePDF = (formData, provider = 'openai') => api.post(`/recipes/import/pdf?provider=${provider}`, formData, {
     headers: {
         'Content-Type': 'multipart/form-data',
     },

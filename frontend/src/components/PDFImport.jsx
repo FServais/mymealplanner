@@ -7,6 +7,7 @@ const PDFImport = () => {
     const navigate = useNavigate();
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
+    const [provider, setProvider] = useState('openai');
 
     const pollForStatus = async (taskId) => {
         const maxAttempts = 180; // 6 minutes max (180 * 2s)
@@ -58,7 +59,7 @@ const PDFImport = () => {
 
         try {
             // Submit the file and get task ID
-            const response = await importRecipePDF(formData);
+            const response = await importRecipePDF(formData, provider);
             const { task_id } = response.data;
 
             // Start polling for status
@@ -101,10 +102,34 @@ const PDFImport = () => {
                 Upload a PDF recipe and we'll extract the details for you using AI.
             </p>
 
+            {/* Provider selector */}
+            <div style={{ marginBottom: '1.5rem' }}>
+                <label style={{ display: 'block', marginBottom: '0.5rem', color: 'var(--text-secondary)' }}>
+                    AI Model Provider
+                </label>
+                <select
+                    value={provider}
+                    onChange={(e) => setProvider(e.target.value)}
+                    disabled={loading}
+                    style={{
+                        padding: '0.5rem 1rem',
+                        borderRadius: '8px',
+                        border: '1px solid var(--border)',
+                        backgroundColor: 'var(--bg-secondary)',
+                        color: 'var(--text-primary)',
+                        fontSize: '1rem',
+                        cursor: loading ? 'not-allowed' : 'pointer'
+                    }}
+                >
+                    <option value="openai">OpenAI (GPT-4)</option>
+                    <option value="gemini">Google Gemini</option>
+                </select>
+            </div>
+
             {loading ? (
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1rem' }}>
                     <Loader className="spin" size={24} />
-                    <span>Analyzing recipe...</span>
+                    <span>Analyzing recipe with {provider === 'openai' ? 'OpenAI' : 'Gemini'}...</span>
                 </div>
             ) : (
                 <label className="btn btn-primary" style={{ cursor: 'pointer', display: 'inline-flex' }}>
