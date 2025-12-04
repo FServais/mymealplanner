@@ -22,7 +22,7 @@ export const getRecipes = (params) => api.get('/recipes/', { params });
 export const getRecipeCount = (params) => api.get('/recipes/count', { params });
 
 // Tools
-export const suggestDuplicates = () => api.post('/tools/ingredients/suggest-duplicates');
+export const suggestDuplicates = () => api.post('/tools/ingredients/suggest-duplicates?provider=gemini');
 export const mergeIngredients = (data) => api.post('/tools/ingredients/merge', data);
 export const getIngredients = () => api.get('/recipes/ingredients');
 export const getRecipe = (id) => api.get(`/recipes/${id}`);

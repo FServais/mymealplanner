@@ -81,14 +81,17 @@ def merge_ingredients(request: MergeIngredientsRequest, db: Session = Depends(da
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/ingredients/suggest-duplicates")
-def suggest_duplicates(db: Session = Depends(database.get_db)):
+def suggest_duplicates(provider: str = "openai", db: Session = Depends(database.get_db)):
     """
     Uses LLM to suggest duplicate ingredients to merge.
+    
+    Args:
+        provider: LLM provider to use ("openai" or "gemini", default: "openai")
     """
     # 1. Get all distinct ingredient names
     all_names = crud.get_all_ingredients(db)
 
     # 2. Call LLM service
-    suggestions = services.suggest_ingredient_duplicates(all_names)
+    suggestions = services.suggest_ingredient_duplicates(all_names, provider=provider)
 
     return {"suggestions": suggestions}

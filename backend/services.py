@@ -615,13 +615,17 @@ def generate_shopping_list(recipes: List[dict]) -> List[dict]:
 
     return final_list
 
-def suggest_ingredient_duplicates(ingredients: List[str]) -> List[dict]:
+def suggest_ingredient_duplicates(ingredients: List[str], provider: str = "gemini") -> List[dict]:
     """
     Uses LLM to find potential duplicate ingredients in a list.
     Returns a list of groups, where each group has a 'target' (suggested canonical name)
     and 'sources' (list of variations to merge).
+
+    Args:
+        ingredients: List of ingredient names to analyze
+        provider: LLM provider to use ("openai" or "gemini", default: "openai")
     """
-    print(f"[suggest_ingredient_duplicates] Starting with {len(ingredients)} ingredients")
+    print(f"[suggest_ingredient_duplicates] Starting with {len(ingredients)} ingredients (provider: {provider})")
 
     if not ingredients:
         print("[suggest_ingredient_duplicates] No ingredients provided, returning empty list")
@@ -663,64 +667,126 @@ def suggest_ingredient_duplicates(ingredients: List[str]) -> List[dict]:
         print("[suggest_ingredient_duplicates] No similar ingredients found, returning empty list")
         return []
 
+    provider = provider.lower().strip()
+    if provider == "gemini":
+        return _suggest_duplicates_gemini(filtered_ingredients)
+    else:
+        return _suggest_duplicates_openai(filtered_ingredients)
+
+
+DUPLICATE_PROMPT = """
+You are a data cleaning assistant for a recipe database.
+I will provide a list of ingredient names that are potentially similar.
+Your task is to identify synonyms, misspellings, plural variations, or language variations that refer to the same ingredient.
+Group them together and suggest a single "canonical" name for the group (preferably the most common, simple, singular form in French or English, matching the input language).
+
+Ignore ingredients that are distinct. Only output groups where there are at least 2 variations.
+
+Output format: JSON object with a key "duplicates" containing a list of objects, each with:
+- "target": string (the canonical name)
+- "sources": list of strings (the variations found in the input list, INCLUDING the target if it was in the list)
+
+Example input: ["Tomate", "Tomates", "Tomato", "Beef", "Boeuf"]
+Example output: {
+    "duplicates": [
+        {"target": "Tomate", "sources": ["Tomate", "Tomates", "Tomato"]},
+        {"target": "Boeuf", "sources": ["Beef", "Boeuf"]}
+    ]
+}
+"""
+
+
+def _suggest_duplicates_openai(filtered_ingredients: List[str]) -> List[dict]:
+    """
+    Uses OpenAI to find potential duplicate ingredients.
+    """
     api_key = os.environ.get("OPENAI_API_KEY")
     if not api_key:
-        print("[suggest_ingredient_duplicates] ERROR: No API key provided for duplicate suggestion.")
+        print("[suggest_duplicates_openai] ERROR: No API key provided.")
         return []
 
-    print(f"[suggest_ingredient_duplicates] API key found, initializing OpenAI client")
+    print("[suggest_duplicates_openai] API key found, initializing OpenAI client")
     client = OpenAI(api_key=api_key)
 
-    prompt = """
-    You are a data cleaning assistant for a recipe database.
-    I will provide a list of ingredient names that are potentially similar.
-    Your task is to identify synonyms, misspellings, plural variations, or language variations that refer to the same ingredient.
-    Group them together and suggest a single "canonical" name for the group (preferably the most common, simple, singular form in French or English, matching the input language).
-
-    Ignore ingredients that are distinct. Only output groups where there are at least 2 variations.
-
-    Output format: JSON object with a key "duplicates" containing a list of objects, each with:
-    - "target": string (the canonical name)
-    - "sources": list of strings (the variations found in the input list, INCLUDING the target if it was in the list)
-
-    Example input: ["Tomate", "Tomates", "Tomato", "Beef", "Boeuf"]
-    Example output: {
-        "duplicates": [
-            {"target": "Tomate", "sources": ["Tomate", "Tomates", "Tomato"]},
-            {"target": "Boeuf", "sources": ["Beef", "Boeuf"]}
-        ]
-    }
-    """
-
     ingredients_text = json.dumps(filtered_ingredients)
-    print(f"[suggest_ingredient_duplicates] Prepared ingredient list, length: {len(ingredients_text)} chars")
+    print(f"[suggest_duplicates_openai] Prepared ingredient list, length: {len(ingredients_text)} chars")
 
     try:
-        print("[suggest_ingredient_duplicates] Calling OpenAI API...")
+        print("[suggest_duplicates_openai] Calling OpenAI API...")
         response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
-                {"role": "system", "content": prompt},
+                {"role": "system", "content": DUPLICATE_PROMPT},
                 {"role": "user", "content": f"Here is the list of ingredients:\n{ingredients_text}"}
             ],
             response_format={"type": "json_object"}
         )
 
-        print("[suggest_ingredient_duplicates] Received response from OpenAI")
+        print("[suggest_duplicates_openai] Received response from OpenAI")
         content = response.choices[0].message.content
-        print(f"[suggest_ingredient_duplicates] Response content: {content[:200]}...")
+        print(f"[suggest_duplicates_openai] Response content: {content[:200]}...")
 
         result = json.loads(content)
-        print(f"[suggest_ingredient_duplicates] Parsed JSON result, keys: {result.keys()}")
+        print(f"[suggest_duplicates_openai] Parsed JSON result, keys: {result.keys()}")
 
         duplicates = result.get("duplicates", [])
-        print(f"[suggest_ingredient_duplicates] Found {len(duplicates)} duplicate groups")
+        print(f"[suggest_duplicates_openai] Found {len(duplicates)} duplicate groups")
 
         return duplicates
 
     except Exception as e:
-        print(f"[suggest_ingredient_duplicates] ERROR: {type(e).__name__}: {e}")
+        print(f"[suggest_duplicates_openai] ERROR: {type(e).__name__}: {e}")
         import traceback
         traceback.print_exc()
         return []
 
+
+def _suggest_duplicates_gemini(filtered_ingredients: List[str]) -> List[dict]:
+    """
+    Uses Google Gemini to find potential duplicate ingredients.
+    """
+    api_key = os.environ.get("GEMINI_API_KEY")
+    if not api_key:
+        print("[suggest_duplicates_gemini] ERROR: No API key provided.")
+        return []
+
+    print("[suggest_duplicates_gemini] API key found, initializing Gemini client")
+
+    try:
+        genai.configure(api_key=api_key)
+        model = genai.GenerativeModel("gemini-2.5-flash-lite")
+
+        ingredients_text = json.dumps(filtered_ingredients)
+        print(f"[suggest_duplicates_gemini] Prepared ingredient list, length: {len(ingredients_text)} chars")
+
+        prompt = f"""{DUPLICATE_PROMPT}
+
+Here is the list of ingredients:
+{ingredients_text}
+"""
+
+        print("[suggest_duplicates_gemini] Calling Gemini API...")
+        response = model.generate_content(
+            prompt,
+            generation_config=genai.GenerationConfig(
+                response_mime_type="application/json"
+            ),
+        )
+
+        print("[suggest_duplicates_gemini] Received response from Gemini")
+        content = response.text
+        print(f"[suggest_duplicates_gemini] Response content: {content[:200]}...")
+
+        result = json.loads(content)
+        print(f"[suggest_duplicates_gemini] Parsed JSON result, keys: {result.keys()}")
+
+        duplicates = result.get("duplicates", [])
+        print(f"[suggest_duplicates_gemini] Found {len(duplicates)} duplicate groups")
+
+        return duplicates
+
+    except Exception as e:
+        print(f"[suggest_duplicates_gemini] ERROR: {type(e).__name__}: {e}")
+        import traceback
+        traceback.print_exc()
+        return []
