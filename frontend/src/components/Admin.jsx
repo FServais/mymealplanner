@@ -59,6 +59,7 @@ const Admin = () => {
     const [selectedIngredients, setSelectedIngredients] = useState([]);
     const [manualTargetName, setManualTargetName] = useState('');
     const [loadingIngredients, setLoadingIngredients] = useState(false);
+    const [ingredientSearch, setIngredientSearch] = useState('');
 
     React.useEffect(() => {
         fetchIngredients();
@@ -222,32 +223,42 @@ const Admin = () => {
                             borderRadius: '0.5rem',
                             padding: '0.5rem'
                         }}>
+                            <input
+                                type="text"
+                                className="input"
+                                placeholder="Search ingredients..."
+                                value={ingredientSearch}
+                                onChange={(e) => setIngredientSearch(e.target.value)}
+                                style={{ marginBottom: '0.5rem', width: '100%' }}
+                            />
                             {loadingIngredients ? (
                                 <div style={{ padding: '1rem', textAlign: 'center' }}>Loading ingredients...</div>
                             ) : (
-                                allIngredients.map((ing, idx) => (
-                                    <div
-                                        key={idx}
-                                        onClick={() => toggleIngredientSelection(ing)}
-                                        style={{
-                                            padding: '0.5rem',
-                                            cursor: 'pointer',
-                                            backgroundColor: selectedIngredients.includes(ing) ? 'var(--primary-light)' : 'transparent',
-                                            borderRadius: '0.25rem',
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            gap: '0.5rem'
-                                        }}
-                                    >
-                                        <input
-                                            type="checkbox"
-                                            checked={selectedIngredients.includes(ing)}
-                                            readOnly
-                                            style={{ pointerEvents: 'none' }}
-                                        />
-                                        {ing}
-                                    </div>
-                                ))
+                                allIngredients
+                                    .filter(ing => ing.toLowerCase().includes(ingredientSearch.toLowerCase()))
+                                    .map((ing, idx) => (
+                                        <div
+                                            key={idx}
+                                            onClick={() => toggleIngredientSelection(ing)}
+                                            style={{
+                                                padding: '0.5rem',
+                                                cursor: 'pointer',
+                                                backgroundColor: selectedIngredients.includes(ing) ? 'var(--primary-light)' : 'transparent',
+                                                borderRadius: '0.25rem',
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                gap: '0.5rem'
+                                            }}
+                                        >
+                                            <input
+                                                type="checkbox"
+                                                checked={selectedIngredients.includes(ing)}
+                                                readOnly
+                                                style={{ pointerEvents: 'none' }}
+                                            />
+                                            {ing}
+                                        </div>
+                                    ))
                             )}
                         </div>
                     </div>

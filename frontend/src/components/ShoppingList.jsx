@@ -1,10 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { generateShoppingList, createMealPlan } from '../services/api';
-import { ShoppingCart, Save } from 'lucide-react';
+import { ShoppingCart, Save, ChefHat } from 'lucide-react';
 
-const ShoppingList = ({ recipeIds }) => {
+const ShoppingList = ({ recipes = [] }) => {
     const [items, setItems] = useState([]);
     const [loading, setLoading] = useState(false);
+
+    // Derive recipeIds from recipes
+    const recipeIds = recipes.map(r => r.id);
 
     useEffect(() => {
         if (recipeIds.length > 0) {
@@ -12,7 +15,7 @@ const ShoppingList = ({ recipeIds }) => {
         } else {
             setItems([]);
         }
-    }, [recipeIds]);
+    }, [recipeIds.join(',')]);
 
     const fetchShoppingList = async () => {
         setLoading(true);
@@ -39,7 +42,7 @@ const ShoppingList = ({ recipeIds }) => {
         }
     };
 
-    if (recipeIds.length === 0) {
+    if (recipes.length === 0) {
         return (
             <div className="card" style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-secondary)' }}>
                 <ShoppingCart size={32} style={{ marginBottom: '1rem', opacity: 0.5 }} />
@@ -50,11 +53,26 @@ const ShoppingList = ({ recipeIds }) => {
 
     return (
         <div className="card">
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
                 <h2 style={{ margin: 0, fontSize: '1.5rem' }}>Shopping List</h2>
                 <span className="badge" style={{ backgroundColor: 'var(--primary)', color: 'white' }}>
                     {items.length} items
                 </span>
+            </div>
+
+            {/* Selected Recipes Section */}
+            <div style={{ marginBottom: '1.5rem', padding: '0.75rem', backgroundColor: 'var(--background)', borderRadius: 'var(--radius)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem', color: 'var(--text-secondary)', fontSize: '0.85rem' }}>
+                    <ChefHat size={16} />
+                    <span>{recipes.length} {recipes.length === 1 ? 'recipe' : 'recipes'} selected</span>
+                </div>
+                <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
+                    {recipes.map((recipe) => (
+                        <li key={recipe.id} style={{ fontSize: '0.9rem', padding: '0.25rem 0', color: 'var(--text)' }}>
+                            • {recipe.name}
+                        </li>
+                    ))}
+                </ul>
             </div>
 
             {loading ? (
@@ -85,3 +103,4 @@ const ShoppingList = ({ recipeIds }) => {
 };
 
 export default ShoppingList;
+

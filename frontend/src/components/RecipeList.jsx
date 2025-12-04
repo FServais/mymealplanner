@@ -6,9 +6,8 @@ import RecipePreviewModal from './RecipePreviewModal';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8082';
 
-const RecipeList = ({ onAddToPlan }) => {
+const RecipeList = ({ selectedRecipes = [], setSelectedRecipes }) => {
     const [recipes, setRecipes] = useState([]);
-    const [selectedRecipes, setSelectedRecipes] = useState(new Set());
     const [allIngredients, setAllIngredients] = useState([]);
     const [selectedIngredients, setSelectedIngredients] = useState([]);
     const [showFilter, setShowFilter] = useState(false);
@@ -18,6 +17,9 @@ const RecipeList = ({ onAddToPlan }) => {
     const [totalCount, setTotalCount] = useState(0);
     const [previewRecipe, setPreviewRecipe] = useState(null);
     const LIMIT = 12;
+
+    // Create a Set of selected recipe IDs for quick lookup
+    const selectedIds = new Set(selectedRecipes.map(r => r.id));
 
     useEffect(() => {
         fetchIngredients();
@@ -96,6 +98,8 @@ const RecipeList = ({ onAddToPlan }) => {
     const handleDelete = async (id) => {
         if (window.confirm("Are you sure you want to delete this recipe?")) {
             await deleteRecipe(id);
+            // Also remove from selected if present
+            setSelectedRecipes(selectedRecipes.filter(r => r.id !== id));
             // Refresh current view
             setPage(0);
             setHasMore(true);
@@ -103,15 +107,12 @@ const RecipeList = ({ onAddToPlan }) => {
         }
     };
 
-    const toggleSelection = (id) => {
-        const newSelection = new Set(selectedRecipes);
-        if (newSelection.has(id)) {
-            newSelection.delete(id);
+    const toggleSelection = (recipe) => {
+        if (selectedIds.has(recipe.id)) {
+            setSelectedRecipes(selectedRecipes.filter(r => r.id !== recipe.id));
         } else {
-            newSelection.add(id);
+            setSelectedRecipes([...selectedRecipes, recipe]);
         }
-        setSelectedRecipes(newSelection);
-        onAddToPlan(Array.from(newSelection));
     };
 
     const toggleIngredientFilter = (ingredient) => {
@@ -131,8 +132,8 @@ const RecipeList = ({ onAddToPlan }) => {
                         {totalCount} {totalCount === 1 ? 'recipe' : 'recipes'} total
                     </p>
                 </div>
-                <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
-                    <div style={{ position: 'relative' }}>
+                <div style={{ display: 'flex', gap: '1rem', alignItems: 'center', flexWrap: 'wrap' }}>
+                    <div style={{ position: 'relative', flexGrow: 1 }}>
                         <input
                             type="text"
                             placeholder="Search recipes..."
@@ -234,14 +235,14 @@ const RecipeList = ({ onAddToPlan }) => {
                     return (
                         <div key={recipe.id} className="card">
                             {thumbnailUrl && (
-                                <div style={{
-                                    width: '100%',
-                                    height: '200px',
-                                    overflow: 'hidden',
-                                    borderRadius: '0.5rem',
-                                    marginBottom: '1rem',
-                                    backgroundColor: 'var(--surface)'
-                                }}>
+                                <div className="recipe-image"
+                                    style={{
+                                        width: '100%',
+                                        overflow: 'hidden',
+                                        borderRadius: '0.5rem',
+                                        marginBottom: '1rem',
+                                        backgroundColor: 'var(--surface)'
+                                    }}>
                                     <img
                                         src={thumbnailUrl}
                                         alt={recipe.name}
@@ -255,7 +256,8 @@ const RecipeList = ({ onAddToPlan }) => {
                                         }}
                                     />
                                 </div>
-                            )}
+                            )
+                            }
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start' }}>
                                 <h3 style={{ marginTop: 0, fontSize: '1.25rem' }}>{recipe.name}</h3>
                                 <button onClick={() => handleDelete(recipe.id)} style={{ color: 'var(--danger)' }}>
@@ -266,8 +268,8 @@ const RecipeList = ({ onAddToPlan }) => {
                             <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', marginTop: 'auto', paddingTop: '1rem' }}>
                                 <input
                                     type="checkbox"
-                                    checked={selectedRecipes.has(recipe.id)}
-                                    onChange={() => toggleSelection(recipe.id)}
+                                    checked={selectedIds.has(recipe.id)}
+                                    onChange={() => toggleSelection(recipe)}
                                     style={{ width: '1.2rem', height: '1.2rem' }}
                                 />
                                 <span style={{ fontSize: '0.9rem' }}>Add to Meal Plan</span>
@@ -290,28 +292,34 @@ const RecipeList = ({ onAddToPlan }) => {
                 })}
             </div>
 
-            {previewRecipe && (
-                <RecipePreviewModal
-                    recipe={previewRecipe}
-                    onClose={() => setPreviewRecipe(null)}
-                />
-            )}
+            {
+                previewRecipe && (
+                    <RecipePreviewModal
+                        recipe={previewRecipe}
+                        onClose={() => setPreviewRecipe(null)}
+                    />
+                )
+            }
 
-            {recipes.length > 0 && hasMore && (
-                <div style={{ textAlign: 'center', marginTop: '2rem' }}>
-                    <button onClick={loadMore} className="btn btn-outline">
-                        <ChevronDown size={20} /> Load More
-                    </button>
-                </div>
-            )}
+            {
+                recipes.length > 0 && hasMore && (
+                    <div style={{ textAlign: 'center', marginTop: '2rem' }}>
+                        <button onClick={loadMore} className="btn btn-outline">
+                            <ChevronDown size={20} /> Load More
+                        </button>
+                    </div>
+                )
+            }
 
-            {recipes.length === 0 && (
-                <div style={{ textAlign: 'center', padding: '4rem', color: 'var(--text-secondary)' }}>
-                    <ChefHat size={48} style={{ marginBottom: '1rem', opacity: 0.5 }} />
-                    <p>No recipes found. Create one or adjust filters!</p>
-                </div>
-            )}
-        </div>
+            {
+                recipes.length === 0 && (
+                    <div style={{ textAlign: 'center', padding: '4rem', color: 'var(--text-secondary)' }}>
+                        <ChefHat size={48} style={{ marginBottom: '1rem', opacity: 0.5 }} />
+                        <p>No recipes found. Create one or adjust filters!</p>
+                    </div>
+                )
+            }
+        </div >
     );
 };
 

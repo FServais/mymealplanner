@@ -13,48 +13,61 @@ import MealPlanList from './components/MealPlanList';
 
 function Content() {
   const [planRecipes, setPlanRecipes] = useState([]);
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
   const location = useLocation();
   const showSidebar = location.pathname !== '/import' && location.pathname !== '/shopping-list' && location.pathname !== '/admin';
 
   return (
     <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
-      <nav style={{ backgroundColor: 'var(--surface)', borderBottom: '1px solid var(--border)', padding: '1rem 0' }}>
+      <nav style={{ backgroundColor: 'var(--surface)', borderBottom: '1px solid var(--border)', padding: '1rem 0', position: 'relative' }}>
         <div className="container" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0 2rem' }}>
           <Link to="/" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '1.25rem', fontWeight: 'bold', color: 'var(--primary)' }}>
             <UtensilsCrossed />
             <span>VibedMeal</span>
           </Link>
-          <div className="nav-links">
-            <Link to="/" className="nav-link">Recipes</Link>
-            <Link to="/meal-plans" className="nav-link">Meal Plans</Link>
-            <Link to="/import" className="nav-link">Import PDF</Link>
-            <Link to="/shopping-list" className="nav-link">
+
+          {/* Hamburger Menu Button */}
+          <button
+            className="mobile-only"
+            onClick={() => setIsMenuOpen(!isMenuOpen)}
+            style={{ color: 'var(--text)', padding: '0.5rem' }}
+          >
+            <div style={{ width: '24px', height: '2px', backgroundColor: 'currentColor', marginBottom: '6px' }}></div>
+            <div style={{ width: '24px', height: '2px', backgroundColor: 'currentColor', marginBottom: '6px' }}></div>
+            <div style={{ width: '24px', height: '2px', backgroundColor: 'currentColor' }}></div>
+          </button>
+
+          <div className={`nav-links ${isMenuOpen ? 'open' : ''}`}>
+            <Link to="/" className="nav-link" onClick={() => setIsMenuOpen(false)}>Recipes</Link>
+            <Link to="/meal-plans" className="nav-link" onClick={() => setIsMenuOpen(false)}>Meal Plans</Link>
+            <Link to="/import" className="nav-link" onClick={() => setIsMenuOpen(false)}>Import PDF</Link>
+            <Link to="/shopping-list" className="nav-link" onClick={() => setIsMenuOpen(false)}>
               <ShoppingCart size={20} /> Shopping List
             </Link>
-            <Link to="/admin" className="nav-link">
+            <Link to="/admin" className="nav-link" onClick={() => setIsMenuOpen(false)}>
               <Settings size={20} /> Admin
             </Link>
           </div>
         </div>
       </nav>
 
-      <main className="container" style={{ flex: 1, display: 'grid', gridTemplateColumns: showSidebar ? '1fr 350px' : '1fr', gap: '2rem', marginTop: '2rem' }}>
-        <div style={{ minWidth: 0 }}>
+      <main className="container" style={{ flex: 1, display: 'grid', gridTemplateColumns: showSidebar ? 'repeat(auto-fit, minmax(300px, 1fr))' : '1fr', gap: '2rem', marginTop: '2rem' }}>
+        <div style={{ minWidth: 0, gridColumn: showSidebar ? '1 / -2' : '1 / -1' }}>
           <Routes>
-            <Route path="/" element={<RecipeList onAddToPlan={setPlanRecipes} />} />
+            <Route path="/" element={<RecipeList selectedRecipes={planRecipes} setSelectedRecipes={setPlanRecipes} />} />
             <Route path="/meal-plans" element={<MealPlanList onLoadPlan={setPlanRecipes} />} />
             <Route path="/create" element={<RecipeForm />} />
             <Route path="/edit/:id" element={<RecipeForm />} />
             <Route path="/import" element={<PDFImport />} />
-            <Route path="/shopping-list" element={<ShoppingList recipeIds={planRecipes} />} />
+            <Route path="/shopping-list" element={<ShoppingList recipes={planRecipes} />} />
             <Route path="/admin" element={<Admin />} />
           </Routes>
         </div>
 
         {showSidebar && (
-          <aside>
+          <aside className="desktop-only" style={{ gridColumn: '-2 / -1', minWidth: '300px' }}>
             <div style={{ position: 'sticky', top: '2rem' }}>
-              <ShoppingList recipeIds={planRecipes} />
+              <ShoppingList recipes={planRecipes} />
             </div>
           </aside>
         )}
