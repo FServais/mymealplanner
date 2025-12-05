@@ -1,5 +1,5 @@
 from sqlalchemy.orm import Session
-from sqlalchemy import or_
+from sqlalchemy import or_, distinct
 import models, schemas
 from typing import List
 
@@ -11,8 +11,10 @@ def get_recipes(db: Session, skip: int = 0, limit: int = 100, ingredients: List[
 
     if ingredients:
         # Filter recipes that contain ANY of the specified ingredients (OR logic)
-        ingredient_filters = [models.Recipe.ingredients.any(models.Ingredient.name.ilike(f"%{ing}%")) for ing in ingredients]
-        query = query.filter(or_(*ingredient_filters))
+        # Use JOIN instead of any() for better performance with the recipe_id index
+        query = query.join(models.Ingredient).filter(
+            or_(*[models.Ingredient.name.ilike(f"%{ing}%") for ing in ingredients])
+        ).distinct()
 
     if search:
         query = query.filter(models.Recipe.name.ilike(f"%{search}%"))
@@ -32,8 +34,10 @@ def get_recipe_count(db: Session, ingredients: List[str] = None, search: str = N
 
     if ingredients:
         # Filter recipes that contain ANY of the specified ingredients (OR logic)
-        ingredient_filters = [models.Recipe.ingredients.any(models.Ingredient.name.ilike(f"%{ing}%")) for ing in ingredients]
-        query = query.filter(or_(*ingredient_filters))
+        # Use JOIN instead of any() for better performance with the recipe_id index
+        query = query.join(models.Ingredient).filter(
+            or_(*[models.Ingredient.name.ilike(f"%{ing}%") for ing in ingredients])
+        ).distinct()
 
     if search:
         query = query.filter(models.Recipe.name.ilike(f"%{search}%"))
