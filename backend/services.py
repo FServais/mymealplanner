@@ -625,32 +625,65 @@ def suggest_ingredient_duplicates(ingredients: List[str], provider: str = "gemin
         ingredients: List of ingredient names to analyze
         provider: LLM provider to use ("openai" or "gemini", default: "openai")
     """
-    print(f"[suggest_ingredient_duplicates] Starting with {len(ingredients)} ingredients (provider: {provider})")
+    print(f"[suggest_ingredient_duplicates] Starting with {len(ingredients)} ingredients (provider: {provider})", flush=True)
 
     if not ingredients:
-        print("[suggest_ingredient_duplicates] No ingredients provided, returning empty list")
+        print("[suggest_ingredient_duplicates] No ingredients provided, returning empty list", flush=True)
         return []
 
-    # Pre-filter: Find potential duplicates using string similarity
-    # This reduces the number of ingredients sent to the LLM
-    print("[suggest_ingredient_duplicates] Pre-filtering with similarity check...")
+    # Hybrid approach: prefix grouping + similarity within groups
+    # This is O(n) for grouping + O(k²) for similarity within each group (where k << n)
+    print("[suggest_ingredient_duplicates] Pre-filtering with prefix grouping + similarity...", flush=True)
 
-    from difflib import SequenceMatcher
-
-    def similarity(a: str, b: str) -> float:
-        """Calculate similarity ratio between two strings (0.0 to 1.0)"""
-        return SequenceMatcher(None, a.lower(), b.lower()).ratio()
-
-    # Group ingredients that are similar to each other
-    SIMILARITY_THRESHOLD = 0.7  # 70% similar
+    from collections import defaultdict
+    
+    def levenshtein_distance(s1: str, s2: str) -> int:
+        """Calculate Levenshtein distance between two strings."""
+        if len(s1) < len(s2):
+            return levenshtein_distance(s2, s1)
+        if len(s2) == 0:
+            return len(s1)
+        
+        previous_row = range(len(s2) + 1)
+        for i, c1 in enumerate(s1):
+            current_row = [i + 1]
+            for j, c2 in enumerate(s2):
+                insertions = previous_row[j + 1] + 1
+                deletions = current_row[j] + 1
+                substitutions = previous_row[j] + (c1 != c2)
+                current_row.append(min(insertions, deletions, substitutions))
+            previous_row = current_row
+        return previous_row[-1]
+    
+    def similarity_ratio(s1: str, s2: str) -> float:
+        """Calculate similarity ratio (0.0 to 1.0) based on Levenshtein distance."""
+        s1_lower, s2_lower = s1.lower(), s2.lower()
+        max_len = max(len(s1_lower), len(s2_lower))
+        if max_len == 0:
+            return 1.0
+        distance = levenshtein_distance(s1_lower, s2_lower)
+        return 1.0 - (distance / max_len)
+    
+    # Group ingredients by their first 2 characters (lowercased) - broader groups
+    prefix_groups = defaultdict(list)
+    for ing in ingredients:
+        prefix = ing.lower()[:2] if len(ing) >= 2 else ing.lower()
+        prefix_groups[prefix].append(ing)
+    
+    # Within each prefix group, find pairs with high similarity
+    SIMILARITY_THRESHOLD = 0.7
     potential_duplicates = set()
-
-    for i, ing1 in enumerate(ingredients):
-        for ing2 in ingredients[i+1:]:
-            sim = similarity(ing1, ing2)
-            if sim >= SIMILARITY_THRESHOLD:
-                potential_duplicates.add(ing1)
-                potential_duplicates.add(ing2)
+    
+    for prefix, group in prefix_groups.items():
+        if len(group) >= 2:
+            # Compare all pairs within this group
+            for i, ing1 in enumerate(group):
+                for ing2 in group[i+1:]:
+                    if similarity_ratio(ing1, ing2) >= SIMILARITY_THRESHOLD:
+                        potential_duplicates.add(ing1)
+                        potential_duplicates.add(ing2)
+    
+    print(f"[suggest_ingredient_duplicates] Found {len(potential_duplicates)} potential duplicates from similarity matching", flush=True)
 
     # If we found potential duplicates, only send those to the LLM
     if potential_duplicates:
@@ -662,9 +695,15 @@ def suggest_ingredient_duplicates(ingredients: List[str], provider: str = "gemin
             if ing_lower not in seen:
                 seen.add(ing_lower)
                 filtered_ingredients.append(ing)
-        print(f"[suggest_ingredient_duplicates] Filtered to {len(filtered_ingredients)} potential duplicates (from {len(ingredients)} total)")
+        print(f"[suggest_ingredient_duplicates] Filtered to {len(filtered_ingredients)} unique ingredients (from {len(ingredients)} total)", flush=True)
+        
+        # Limit to 200 ingredients to avoid timeout
+        MAX_INGREDIENTS = 200
+        if len(filtered_ingredients) > MAX_INGREDIENTS:
+            print(f"[suggest_ingredient_duplicates] Limiting to {MAX_INGREDIENTS} ingredients to avoid timeout", flush=True)
+            filtered_ingredients = filtered_ingredients[:MAX_INGREDIENTS]
     else:
-        print("[suggest_ingredient_duplicates] No similar ingredients found, returning empty list")
+        print("[suggest_ingredient_duplicates] No similar ingredients found, returning empty list", flush=True)
         return []
 
     provider = provider.lower().strip()
@@ -727,12 +766,16 @@ def _suggest_duplicates_openai(filtered_ingredients: List[str]) -> List[dict]:
         print(f"[suggest_duplicates_openai] Response content: {content[:200]}...")
 
         result = json.loads(content)
-        print(f"[suggest_duplicates_openai] Parsed JSON result, keys: {result.keys()}")
+        print(f"[suggest_duplicates_openai] Parsed JSON result, keys: {result.keys()}", flush=True)
 
         duplicates = result.get("duplicates", [])
-        print(f"[suggest_duplicates_openai] Found {len(duplicates)} duplicate groups")
+        print(f"[suggest_duplicates_openai] Found {len(duplicates)} duplicate groups before filtering", flush=True)
+        
+        # Filter out groups with less than 2 sources (can't merge a single item)
+        valid_duplicates = [d for d in duplicates if len(d.get("sources", [])) >= 2]
+        print(f"[suggest_duplicates_openai] {len(valid_duplicates)} groups have 2+ sources", flush=True)
 
-        return duplicates
+        return valid_duplicates
 
     except Exception as e:
         print(f"[suggest_duplicates_openai] ERROR: {type(e).__name__}: {e}")
@@ -775,15 +818,37 @@ Here is the list of ingredients:
 
         print("[suggest_duplicates_gemini] Received response from Gemini")
         content = response.text
-        print(f"[suggest_duplicates_gemini] Response content: {content[:200]}...")
+        print(f"[suggest_duplicates_gemini] Response content length: {len(content)} chars")
+
+        # Sanitize invalid unicode escapes (e.g., \uXXXX with invalid hex)
+        import re
+        def fix_invalid_unicode(match):
+            try:
+                # Try to decode the unicode escape
+                return match.group(0).encode().decode('unicode_escape')
+            except:
+                # If invalid, just remove the escape
+                return ""
+        
+        # Remove invalid \uXXXX escapes
+        content = re.sub(r'\\u[0-9a-fA-F]{0,3}(?![0-9a-fA-F])', '', content)
 
         result = json.loads(content)
-        print(f"[suggest_duplicates_gemini] Parsed JSON result, keys: {result.keys()}")
+        print(f"[suggest_duplicates_gemini] Parsed JSON result, keys: {result.keys()}", flush=True)
 
         duplicates = result.get("duplicates", [])
-        print(f"[suggest_duplicates_gemini] Found {len(duplicates)} duplicate groups")
+        print(f"[suggest_duplicates_gemini] Found {len(duplicates)} duplicate groups before filtering", flush=True)
+        
+        # Filter out groups with less than 2 sources (can't merge a single item)
+        valid_duplicates = [d for d in duplicates if len(d.get("sources", [])) >= 2]
+        print(f"[suggest_duplicates_gemini] {len(valid_duplicates)} groups have 2+ sources", flush=True)
 
-        return duplicates
+        return valid_duplicates
+
+    except json.JSONDecodeError as e:
+        print(f"[suggest_duplicates_gemini] JSON parsing error: {e}")
+        print(f"[suggest_duplicates_gemini] Raw content (first 500 chars): {content[:500] if 'content' in dir() else 'N/A'}")
+        return []
 
     except Exception as e:
         print(f"[suggest_duplicates_gemini] ERROR: {type(e).__name__}: {e}")

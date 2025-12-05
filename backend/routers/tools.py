@@ -88,10 +88,20 @@ def suggest_duplicates(provider: str = "openai", db: Session = Depends(database.
     Args:
         provider: LLM provider to use ("openai" or "gemini", default: "openai")
     """
+    print(f"[suggest-duplicates] Endpoint called with provider: {provider}")
+    
     # 1. Get all distinct ingredient names
     all_names = crud.get_all_ingredients(db)
+    print(f"[suggest-duplicates] Found {len(all_names)} distinct ingredients")
 
     # 2. Call LLM service
-    suggestions = services.suggest_ingredient_duplicates(all_names, provider=provider)
-
-    return {"suggestions": suggestions}
+    try:
+        print(f"[suggest-duplicates] Calling suggest_ingredient_duplicates...")
+        suggestions = services.suggest_ingredient_duplicates(all_names, provider=provider)
+        print(f"[suggest-duplicates] Got {len(suggestions)} suggestion groups")
+        return {"suggestions": suggestions}
+    except Exception as e:
+        print(f"[suggest-duplicates] ERROR: {type(e).__name__}: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
