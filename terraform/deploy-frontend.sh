@@ -13,7 +13,7 @@ fi
 DROPLET_IP=$1
 APP_USER="mealplanner"
 APP_DIR="/home/mealplanner/mymealplanner"
-LOCAL_DIR="$(cd "$(dirname "$0")" && pwd)"
+LOCAL_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 
 echo "==========================================="
 echo "Deploying Frontend to $DROPLET_IP"

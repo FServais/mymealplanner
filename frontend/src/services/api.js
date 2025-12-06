@@ -25,6 +25,11 @@ export const getRecipeCount = (params) => api.get('/recipes/count', { params });
 export const suggestDuplicates = () => api.post('/tools/ingredients/suggest-duplicates?provider=gemini');
 export const mergeIngredients = (data) => api.post('/tools/ingredients/merge', data);
 export const getIngredients = () => api.get('/recipes/ingredients');
+// Tags
+export const getTags = () => api.get('/recipes/tags');
+export const createTag = (tag) => api.post('/recipes/tags', tag);
+export const updateTag = (id, tag) => api.put(`/recipes/tags/${id}`, tag);
+export const deleteTag = (id) => api.delete(`/recipes/tags/${id}`);
 export const getRecipe = (id) => api.get(`/recipes/${id}`);
 export const createRecipe = (recipe) => api.post('/recipes/', recipe);
 export const updateRecipe = (id, recipe) => api.put(`/recipes/${id}`, recipe);

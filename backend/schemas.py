@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from typing import List, Optional
+from typing import List, Optional, Union
 from datetime import datetime
 
 class IngredientBase(BaseModel):
@@ -30,6 +30,19 @@ class Instruction(InstructionBase):
     class Config:
         orm_mode = True
 
+class TagBase(BaseModel):
+    name: str
+    color: Optional[str] = "#6366f1"
+
+class TagCreate(TagBase):
+    pass
+
+class Tag(TagBase):
+    id: int
+
+    class Config:
+        orm_mode = True
+
 class RecipeBase(BaseModel):
     name: str
     description: Optional[str] = None
@@ -38,11 +51,16 @@ class RecipeBase(BaseModel):
 class RecipeCreate(RecipeBase):
     ingredients: List[IngredientCreate]
     instructions: List[InstructionCreate]
+class RecipeCreate(RecipeBase):
+    ingredients: List[IngredientCreate]
+    instructions: List[InstructionCreate]
+    tags: List[Union[str, TagCreate]] = []
 
 class Recipe(RecipeBase):
     id: int
     ingredients: List[Ingredient] = []
     instructions: List[Instruction] = []
+    tags: List[Tag] = []
 
     class Config:
         orm_mode = True

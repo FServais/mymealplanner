@@ -23,12 +23,39 @@ def read_recipes(
     skip: int = 0,
     limit: int = 100,
     ingredients: List[str] = Query(None),
+    tags: List[str] = Query(None),
     search: Optional[str] = None,
     source_file: Optional[str] = None,
     db: Session = Depends(database.get_db)
 ):
-    recipes = crud.get_recipes(db, skip=skip, limit=limit, ingredients=ingredients, search=search, source_file=source_file)
+    recipes = crud.get_recipes(db, skip=skip, limit=limit, ingredients=ingredients, tags=tags, search=search, source_file=source_file)
     return recipes
+
+@router.get("/tags", response_model=List[schemas.Tag])
+def read_tags(db: Session = Depends(database.get_db)):
+    return crud.get_all_tags(db)
+
+@router.post("/tags", response_model=schemas.Tag)
+def create_tag(tag: schemas.TagCreate, db: Session = Depends(database.get_db)):
+    # Check if exists
+    existing = crud.get_all_tags(db)
+    if any(t.name == tag.name for t in existing):
+        raise HTTPException(status_code=400, detail="Tag already exists")
+    return crud.create_tag(db, tag)
+
+@router.put("/tags/{tag_id}", response_model=schemas.Tag)
+def update_tag(tag_id: int, tag: schemas.TagCreate, db: Session = Depends(database.get_db)):
+    db_tag = crud.update_tag(db, tag_id, tag)
+    if db_tag is None:
+        raise HTTPException(status_code=404, detail="Tag not found")
+    return db_tag
+
+@router.delete("/tags/{tag_id}")
+def delete_tag(tag_id: int, db: Session = Depends(database.get_db)):
+    success = crud.delete_tag(db, tag_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Tag not found")
+    return {"ok": True}
 
 @router.get("/ingredients", response_model=List[str])
 @router.get("/ingredients", response_model=List[str])
@@ -38,11 +65,12 @@ def read_ingredients(db: Session = Depends(database.get_db)):
 @router.get("/count")
 def read_recipe_count(
     ingredients: List[str] = Query(None),
+    tags: List[str] = Query(None),
     search: Optional[str] = None,
     source_file: Optional[str] = None,
     db: Session = Depends(database.get_db)
 ):
-    count = crud.get_recipe_count(db, ingredients=ingredients, search=search, source_file=source_file)
+    count = crud.get_recipe_count(db, ingredients=ingredients, tags=tags, search=search, source_file=source_file)
     return {"count": count}
 
 @router.get("/{recipe_id}", response_model=schemas.Recipe)

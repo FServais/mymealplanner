@@ -6,7 +6,7 @@ from typing import List
 def get_recipe(db: Session, recipe_id: int):
     return db.query(models.Recipe).filter(models.Recipe.id == recipe_id).first()
 
-def get_recipes(db: Session, skip: int = 0, limit: int = 100, ingredients: List[str] = None, search: str = None, source_file: str = None):
+def get_recipes(db: Session, skip: int = 0, limit: int = 100, ingredients: List[str] = None, tags: List[str] = None, search: str = None, source_file: str = None):
     query = db.query(models.Recipe)
 
     if ingredients:
@@ -14,6 +14,12 @@ def get_recipes(db: Session, skip: int = 0, limit: int = 100, ingredients: List[
         # Use JOIN instead of any() for better performance with the recipe_id index
         query = query.join(models.Ingredient).filter(
             or_(*[models.Ingredient.name.ilike(f"%{ing}%") for ing in ingredients])
+        ).distinct()
+
+    if tags:
+        # Filter recipes that contain ANY of the specified tags (OR logic)
+        query = query.join(models.Recipe.tags).filter(
+            models.Tag.name.in_(tags)
         ).distinct()
 
     if search:
@@ -29,7 +35,35 @@ def get_all_ingredients(db: Session):
     results = db.query(models.Ingredient.name).distinct().all()
     return [row[0] for row in results]
 
-def get_recipe_count(db: Session, ingredients: List[str] = None, search: str = None, source_file: str = None):
+def get_all_tags(db: Session):
+    # Return all tags
+    return db.query(models.Tag).all()
+
+def create_tag(db: Session, tag: schemas.TagCreate):
+    db_tag = models.Tag(name=tag.name, color=tag.color)
+    db.add(db_tag)
+    db.commit()
+    db.refresh(db_tag)
+    return db_tag
+
+def update_tag(db: Session, tag_id: int, tag: schemas.TagCreate):
+    db_tag = db.query(models.Tag).filter(models.Tag.id == tag_id).first()
+    if db_tag:
+        db_tag.name = tag.name
+        db_tag.color = tag.color
+        db.commit()
+        db.refresh(db_tag)
+    return db_tag
+
+def delete_tag(db: Session, tag_id: int):
+    db_tag = db.query(models.Tag).filter(models.Tag.id == tag_id).first()
+    if db_tag:
+        db.delete(db_tag)
+        db.commit()
+        return True
+    return False
+
+def get_recipe_count(db: Session, ingredients: List[str] = None, tags: List[str] = None, search: str = None, source_file: str = None):
     query = db.query(models.Recipe)
 
     if ingredients:
@@ -37,6 +71,12 @@ def get_recipe_count(db: Session, ingredients: List[str] = None, search: str = N
         # Use JOIN instead of any() for better performance with the recipe_id index
         query = query.join(models.Ingredient).filter(
             or_(*[models.Ingredient.name.ilike(f"%{ing}%") for ing in ingredients])
+        ).distinct()
+
+    if tags:
+        # Filter recipes that contain ANY of the specified tags (OR logic)
+        query = query.join(models.Recipe.tags).filter(
+            models.Tag.name.in_(tags)
         ).distinct()
 
     if search:
@@ -57,9 +97,27 @@ def create_recipe(db: Session, recipe: schemas.RecipeCreate):
         db_ingredient = models.Ingredient(**ingredient.dict(), recipe_id=db_recipe.id)
         db.add(db_ingredient)
 
-    for instruction in recipe.instructions:
-        db_instruction = models.Instruction(**instruction.dict(), recipe_id=db_recipe.id)
-        db.add(db_instruction)
+    # Handle tags
+    for tag_input in recipe.tags:
+        tag_name = tag_input
+        tag_color = "#6366f1"
+        
+        if hasattr(tag_input, 'name'):
+             tag_name = tag_input.name
+             tag_color = tag_input.color
+
+        # Check if tag exists
+        db_tag = db.query(models.Tag).filter(models.Tag.name == tag_name).first()
+        if not db_tag:
+            db_tag = models.Tag(name=tag_name, color=tag_color)
+            db.add(db_tag)
+        else:
+            # Update color if provided and different? 
+            # Let's say we update it if it's explicitly passed object
+            if hasattr(tag_input, 'color'):
+                db_tag.color = tag_color
+                
+        db_recipe.tags.append(db_tag)
 
     db.commit()
     db.refresh(db_recipe)
@@ -119,6 +177,26 @@ def update_recipe(db: Session, recipe_id: int, recipe: schemas.RecipeCreate):
         db_instruction = models.Instruction(**instruction.dict(), recipe_id=db_recipe.id)
         db.add(db_instruction)
 
+    # Update tags
+    db_recipe.tags = [] # Clear existing associations
+    for tag_input in recipe.tags:
+        tag_name = tag_input
+        tag_color = "#6366f1"
+        
+        if hasattr(tag_input, 'name'):
+             tag_name = tag_input.name
+             tag_color = tag_input.color
+
+        db_tag = db.query(models.Tag).filter(models.Tag.name == tag_name).first()
+        if not db_tag:
+            db_tag = models.Tag(name=tag_name, color=tag_color)
+            db.add(db_tag)
+        else:
+             if hasattr(tag_input, 'color'):
+                db_tag.color = tag_color
+
+        db_recipe.tags.append(db_tag)
+    
     db.commit()
     db.refresh(db_recipe)
     return db_recipe

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { getRecipes, deleteRecipe, getIngredients, getRecipeCount } from '../services/api';
+import { getRecipes, deleteRecipe, getIngredients, getTags, getRecipeCount } from '../services/api';
 import { Plus, Trash2, ChefHat, Filter, X, Search, ChevronDown, Eye } from 'lucide-react';
 import RecipePreviewModal from './RecipePreviewModal';
 
@@ -10,6 +10,8 @@ const RecipeList = ({ selectedRecipes = [], setSelectedRecipes }) => {
     const [recipes, setRecipes] = useState([]);
     const [allIngredients, setAllIngredients] = useState([]);
     const [selectedIngredients, setSelectedIngredients] = useState([]);
+    const [allTags, setAllTags] = useState([]);
+    const [selectedTags, setSelectedTags] = useState([]);
     const [showFilter, setShowFilter] = useState(false);
     const [search, setSearch] = useState('');
     const [page, setPage] = useState(0);
@@ -23,6 +25,7 @@ const RecipeList = ({ selectedRecipes = [], setSelectedRecipes }) => {
 
     useEffect(() => {
         fetchIngredients();
+        fetchTags();
     }, []);
 
     useEffect(() => {
@@ -32,7 +35,23 @@ const RecipeList = ({ selectedRecipes = [], setSelectedRecipes }) => {
         setHasMore(true);
         fetchRecipes(0, true);
         fetchCount();
-    }, [selectedIngredients, search]);
+        setHasMore(true);
+        fetchRecipes(0, true);
+        fetchCount();
+    }, [selectedIngredients, selectedTags, search]);
+
+    const fetchTags = async () => {
+        try {
+            const response = await getTags();
+            setAllTags(response.data.sort((a, b) => {
+                const nameA = a.name || a;
+                const nameB = b.name || b;
+                return nameA.localeCompare(nameB);
+            }));
+        } catch (error) {
+            console.error("Error fetching tags", error);
+        }
+    };
 
     const fetchIngredients = async () => {
         try {
@@ -48,6 +67,9 @@ const RecipeList = ({ selectedRecipes = [], setSelectedRecipes }) => {
             const params = {};
             if (selectedIngredients.length > 0) {
                 params.ingredients = selectedIngredients;
+            }
+            if (selectedTags.length > 0) {
+                params.tags = selectedTags;
             }
             if (search) {
                 params.search = search;
@@ -67,6 +89,9 @@ const RecipeList = ({ selectedRecipes = [], setSelectedRecipes }) => {
             };
             if (selectedIngredients.length > 0) {
                 params.ingredients = selectedIngredients;
+            }
+            if (selectedTags.length > 0) {
+                params.tags = selectedTags;
             }
             if (search) {
                 params.search = search;
@@ -123,6 +148,14 @@ const RecipeList = ({ selectedRecipes = [], setSelectedRecipes }) => {
         }
     };
 
+    const toggleTagFilter = (tagName) => {
+        if (selectedTags.includes(tagName)) {
+            setSelectedTags(selectedTags.filter(t => t !== tagName));
+        } else {
+            setSelectedTags([...selectedTags, tagName]);
+        }
+    };
+
     return (
         <div>
             <div className="header">
@@ -165,7 +198,7 @@ const RecipeList = ({ selectedRecipes = [], setSelectedRecipes }) => {
                                 onClick={() => setSelectedIngredients([])}
                                 style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', textDecoration: 'underline' }}
                             >
-                                Clear all
+                                Clear ingredients
                             </button>
                         )}
                     </div>
@@ -216,8 +249,45 @@ const RecipeList = ({ selectedRecipes = [], setSelectedRecipes }) => {
                             <span style={{ color: 'var(--text-secondary)' }}>No ingredients found to filter by.</span>
                         )}
                     </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', marginTop: '1.5rem', borderTop: '1px solid var(--border)', paddingTop: '1rem' }}>
+                        <h3 style={{ margin: 0 }}>Filter by Tags</h3>
+                        {selectedTags.length > 0 && (
+                            <button
+                                onClick={() => setSelectedTags([])}
+                                style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', textDecoration: 'underline' }}
+                            >
+                                Clear tags
+                            </button>
+                        )}
+                    </div>
+
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', maxHeight: '150px', overflowY: 'auto' }}>
+                        {allTags.map((tag) => {
+                            const tagName = tag.name || tag;
+                            const tagColor = tag.color || '#6366f1';
+                            return (
+                                <button
+                                    key={tagName}
+                                    className="tag"
+                                    onClick={() => toggleTagFilter(tagName)}
+                                    style={{
+                                        cursor: 'pointer',
+                                        backgroundColor: selectedTags.includes(tagName) ? tagColor : (tagColor + '1A'), // 1A = 10% opacity
+                                        color: selectedTags.includes(tagName) ? 'white' : tagColor,
+                                        borderColor: selectedTags.includes(tagName) ? tagColor : (tagColor + '33') // 33 = 20% opacity
+                                    }}
+                                >
+                                    {tagName}
+                                </button>
+                            )
+                        })}
+                        {allTags.length === 0 && (
+                            <span style={{ color: 'var(--text-secondary)' }}>No tags found.</span>
+                        )}
+                    </div>
                 </div>
-            )}
+            )
+            }
 
             <div className="grid">
                 {recipes.map((recipe) => {
@@ -265,6 +335,22 @@ const RecipeList = ({ selectedRecipes = [], setSelectedRecipes }) => {
                                 </button>
                             </div>
 
+                            {
+                                recipe.tags && recipe.tags.length > 0 && (
+                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginTop: '0.75rem', marginBottom: '0.5rem' }}>
+                                        {recipe.tags.map((tag) => (
+                                            <span key={tag.name} className="tag" style={{
+                                                backgroundColor: tag.color + '1A',
+                                                color: tag.color,
+                                                borderColor: tag.color + '33'
+                                            }}>
+                                                {tag.name}
+                                            </span>
+                                        ))}
+                                    </div>
+                                )
+                            }
+
                             <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', marginTop: 'auto', paddingTop: '1rem' }}>
                                 <input
                                     type="checkbox"
@@ -287,10 +373,10 @@ const RecipeList = ({ selectedRecipes = [], setSelectedRecipes }) => {
                                     Edit Recipe
                                 </Link>
                             </div>
-                        </div>
+                        </div >
                     );
                 })}
-            </div>
+            </div >
 
             {
                 previewRecipe && (

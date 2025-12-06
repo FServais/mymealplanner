@@ -10,6 +10,13 @@ meal_plan_recipes = Table(
     Column('recipe_id', Integer, ForeignKey('recipes.id'))
 )
 
+recipe_tags = Table(
+    'recipe_tags',
+    Base.metadata,
+    Column('recipe_id', Integer, ForeignKey('recipes.id')),
+    Column('tag_id', Integer, ForeignKey('tags.id'))
+)
+
 class MealPlan(Base):
     __tablename__ = "meal_plans"
 
@@ -18,6 +25,15 @@ class MealPlan(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
     recipes = relationship("Recipe", secondary=meal_plan_recipes, back_populates="meal_plans")
+
+class Tag(Base):
+    __tablename__ = "tags"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, unique=True, index=True)
+    color = Column(String, default="#6366f1")
+
+    recipes = relationship("Recipe", secondary=recipe_tags, back_populates="tags")
 
 class Recipe(Base):
     __tablename__ = "recipes"
@@ -30,6 +46,7 @@ class Recipe(Base):
     ingredients = relationship("Ingredient", back_populates="recipe", cascade="all, delete-orphan")
     instructions = relationship("Instruction", back_populates="recipe", cascade="all, delete-orphan")
     meal_plans = relationship("MealPlan", secondary=meal_plan_recipes, back_populates="recipes")
+    tags = relationship("Tag", secondary=recipe_tags, back_populates="recipes")
 
 class Ingredient(Base):
     __tablename__ = "ingredients"

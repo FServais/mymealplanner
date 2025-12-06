@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { createRecipe, getRecipe, updateRecipe } from '../services/api';
+import { createRecipe, getRecipe, updateRecipe, getTags } from '../services/api';
 import { Save, Plus, X } from 'lucide-react';
 
 const RecipeForm = () => {
@@ -10,14 +10,45 @@ const RecipeForm = () => {
         name: '',
         description: '',
         ingredients: [],
-        instructions: []
+        instructions: [],
+        tags: []
     });
 
+    const [availableTags, setAvailableTags] = useState([]);
+    const [showTagSuggestions, setShowTagSuggestions] = useState(false);
+    const [tagInput, setTagInput] = useState('');
+    const [tagColor, setTagColor] = useState('#6366f1');
+
+    const PRESET_COLORS = [
+        '#ef4444', // Red
+        '#f97316', // Orange
+        '#f59e0b', // Amber
+        '#84cc16', // Lime
+        '#22c55e', // Green
+        '#10b981', // Emerald
+        '#06b6d4', // Cyan
+        '#3b82f6', // Blue
+        '#6366f1', // Indigo (Default)
+        '#8b5cf6', // Violet
+        '#d946ef', // Fuchsia
+        '#ec4899', // Pink
+    ];
+
     useEffect(() => {
+        fetchTags();
         if (id) {
             loadRecipe();
         }
     }, [id]);
+
+    const fetchTags = async () => {
+        try {
+            const response = await getTags();
+            setAvailableTags(response.data);
+        } catch (error) {
+            console.error("Error fetching tags", error);
+        }
+    };
 
     const loadRecipe = async () => {
         const response = await getRecipe(id);
@@ -104,6 +135,147 @@ const RecipeForm = () => {
                 </div>
 
                 <div className="card" style={{ marginBottom: '2rem' }}>
+                    <div style={{ marginBottom: '1rem' }}>
+                        <label style={{ display: 'block', marginBottom: '0.5rem' }}>Tags</label>
+
+                        <div style={{ display: 'flex', gap: '0.25rem', marginBottom: '0.5rem', flexWrap: 'wrap' }}>
+                            {PRESET_COLORS.map(color => (
+                                <button
+                                    key={color}
+                                    type="button"
+                                    onClick={() => setTagColor(color)}
+                                    style={{
+                                        width: '24px',
+                                        height: '24px',
+                                        borderRadius: '50%',
+                                        backgroundColor: color,
+                                        border: tagColor === color ? '2px solid white' : '2px solid transparent',
+                                        boxShadow: tagColor === color ? `0 0 0 2px ${color}` : 'none',
+                                        cursor: 'pointer',
+                                        transition: 'all 0.2s'
+                                    }}
+                                    title={color}
+                                />
+                            ))}
+                        </div>
+
+                        <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.5rem', position: 'relative' }}>
+                            {/* Hidden color input to maintain state compatibility if needed, but primarily using presets now */}
+                            <div style={{ flex: 1, position: 'relative' }}>
+                                <input
+                                    className="input"
+                                    placeholder="Add a tag..."
+                                    value={tagInput}
+                                    onChange={(e) => {
+                                        setTagInput(e.target.value);
+                                        setShowTagSuggestions(true);
+                                    }}
+                                    onFocus={() => setShowTagSuggestions(true)}
+                                    // Delay hiding to allow click event on suggestion
+                                    onBlur={() => setTimeout(() => setShowTagSuggestions(false), 200)}
+                                    onKeyDown={(e) => {
+                                        if (e.key === 'Enter') {
+                                            e.preventDefault();
+                                            const val = tagInput.trim();
+                                            if (val && !recipe.tags.some(t => (t.name || t) === val)) {
+                                                const newTag = { name: val, color: tagColor };
+                                                setRecipe({ ...recipe, tags: [...(recipe.tags || []), newTag] });
+                                                setTagInput('');
+                                                setShowTagSuggestions(false);
+                                            }
+                                        }
+                                    }}
+                                    style={{ width: '100%' }}
+                                />
+                                {showTagSuggestions && tagInput && (
+                                    <div style={{
+                                        position: 'absolute',
+                                        top: '100%',
+                                        left: 0,
+                                        right: 0,
+                                        backgroundColor: 'var(--surface)',
+                                        border: '1px solid var(--border)',
+                                        borderRadius: '0 0 var(--radius) var(--radius)',
+                                        zIndex: 10,
+                                        maxHeight: '200px',
+                                        overflowY: 'auto',
+                                        boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
+                                    }}>
+                                        {availableTags
+                                            .filter(t => t.name.toLowerCase().includes(tagInput.toLowerCase()) && !recipe.tags.some(rt => (rt.name || rt) === t.name))
+                                            .map(tag => (
+                                                <div
+                                                    key={tag.id}
+                                                    onClick={() => {
+                                                        setRecipe({ ...recipe, tags: [...(recipe.tags || []), tag] });
+                                                        setTagInput('');
+                                                        setShowTagSuggestions(false);
+                                                    }}
+                                                    style={{
+                                                        padding: '0.5rem',
+                                                        cursor: 'pointer',
+                                                        display: 'flex',
+                                                        alignItems: 'center',
+                                                        gap: '0.5rem',
+                                                        borderBottom: '1px solid var(--border)'
+                                                    }}
+                                                    onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--background)'}
+                                                    onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                                                >
+                                                    <span style={{
+                                                        width: '12px',
+                                                        height: '12px',
+                                                        borderRadius: '50%',
+                                                        backgroundColor: tag.color
+                                                    }}></span>
+                                                    {tag.name}
+                                                </div>
+                                            ))}
+                                    </div>
+                                )}
+                            </div>
+                            <button type="button" className="btn btn-outline"
+                                onClick={() => {
+                                    const val = tagInput.trim();
+                                    if (val && !recipe.tags.some(t => (t.name || t) === val)) {
+                                        const newTag = { name: val, color: tagColor };
+                                        setRecipe({ ...recipe, tags: [...(recipe.tags || []), newTag] });
+                                        setTagInput('');
+                                    }
+                                }}
+                            >
+                                <Plus size={16} />
+                            </button>
+                        </div>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
+                            {(recipe.tags || []).map((tag, index) => {
+                                const tagName = tag.name || tag;
+                                const tagClr = tag.color || '#6366f1';
+                                return (
+                                    <span key={index} className="tag" style={{
+                                        backgroundColor: tagClr + '1A',
+                                        color: tagClr,
+                                        borderColor: tagClr + '33'
+                                    }}>
+                                        {tagName}
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                const newTags = recipe.tags.filter((_, i) => i !== index);
+                                                setRecipe({ ...recipe, tags: newTags });
+                                            }}
+                                            style={{ border: 'none', background: 'none', padding: 0, cursor: 'pointer', color: 'inherit', marginLeft: '0.5rem', display: 'flex' }}
+                                        >
+                                            <X size={14} />
+                                        </button>
+                                    </span>
+                                )
+                            })}
+                        </div>
+                    </div>
+                </div>
+
+                <div className="card" style={{ marginBottom: '2rem' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1rem' }}>
                         <h3>Ingredients</h3>
                         <button type="button" onClick={addIngredient} className="btn btn-outline">
@@ -162,8 +334,8 @@ const RecipeForm = () => {
                 <button type="submit" className="btn btn-primary" style={{ width: '100%', justifyContent: 'center' }}>
                     <Save size={20} /> Save Recipe
                 </button>
-            </form>
-        </div>
+            </form >
+        </div >
     );
 };
 

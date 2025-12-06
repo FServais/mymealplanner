@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { suggestDuplicates, mergeIngredients, getIngredients } from '../services/api';
-import { Wand2, ArrowRight, Check, Loader2 } from 'lucide-react';
+import { suggestDuplicates, mergeIngredients, getIngredients, getTags, createTag, updateTag, deleteTag } from '../services/api';
+import { Wand2, ArrowRight, Check, Loader2, Tag, Plus, Pencil, Trash2, X } from 'lucide-react';
 
 const Admin = () => {
     const [suggestions, setSuggestions] = useState([]);
@@ -61,9 +61,78 @@ const Admin = () => {
     const [loadingIngredients, setLoadingIngredients] = useState(false);
     const [ingredientSearch, setIngredientSearch] = useState('');
 
+    // Tag Management State
+    const [tags, setTags] = useState([]);
+    const [loadingTags, setLoadingTags] = useState(false);
+    const [editingTag, setEditingTag] = useState(null); // null = create mode, object = edit mode
+    const [tagForm, setTagForm] = useState({ name: '', color: '#6366f1' });
+    const [showTagModal, setShowTagModal] = useState(false);
+
+    const PRESET_COLORS = [
+        '#ef4444', '#f97316', '#f59e0b', '#84cc16',
+        '#22c55e', '#10b981', '#06b6d4', '#3b82f6',
+        '#6366f1', '#8b5cf6', '#d946ef', '#ec4899'
+    ];
+
     React.useEffect(() => {
         fetchIngredients();
+        fetchTags();
     }, []);
+
+    const fetchTags = async () => {
+        setLoadingTags(true);
+        try {
+            const response = await getTags();
+            setTags(response.data.sort((a, b) => a.name.localeCompare(b.name)));
+        } catch (error) {
+            console.error("Error fetching tags", error);
+        } finally {
+            setLoadingTags(false);
+        }
+    };
+
+    const handleSaveTag = async () => {
+        try {
+            if (editingTag) {
+                await updateTag(editingTag.id, tagForm);
+                setMessage({ type: 'success', text: 'Tag updated successfully.' });
+            } else {
+                await createTag(tagForm);
+                setMessage({ type: 'success', text: 'Tag created successfully.' });
+            }
+            setShowTagModal(false);
+            setTagForm({ name: '', color: '#6366f1' });
+            setEditingTag(null);
+            fetchTags();
+        } catch (error) {
+            console.error("Error saving tag", error);
+            setMessage({ type: 'error', text: 'Failed to save tag.' });
+        }
+    };
+
+    const handleDeleteTag = async (id) => {
+        if (!window.confirm("Are you sure? This will remove the tag from all recipes that use it.")) return;
+        try {
+            await deleteTag(id);
+            setMessage({ type: 'success', text: 'Tag deleted successfully.' });
+            fetchTags();
+        } catch (error) {
+            console.error("Error deleting tag", error);
+            setMessage({ type: 'error', text: 'Failed to delete tag.' });
+        }
+    };
+
+    const openCreateTag = () => {
+        setTagForm({ name: '', color: '#6366f1' });
+        setEditingTag(null);
+        setShowTagModal(true);
+    };
+
+    const openEditTag = (tag) => {
+        setTagForm({ name: tag.name, color: tag.color || '#6366f1' });
+        setEditingTag(tag);
+        setShowTagModal(true);
+    };
 
     const fetchIngredients = async () => {
         setLoadingIngredients(true);
@@ -120,6 +189,100 @@ const Admin = () => {
             <div className="header">
                 <h1>Admin Tools</h1>
             </div>
+
+            {/* Tag Management Section */}
+            <div className="card" style={{ marginBottom: '2rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+                    <div>
+                        <h2 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                            <Tag size={24} color="var(--primary)" />
+                            Tag Management
+                        </h2>
+                        <p style={{ color: 'var(--text-secondary)', marginTop: '0.5rem' }}>
+                            Create, update, or delete tags. Changes reflect on all recipes.
+                        </p>
+                    </div>
+                    <button className="btn btn-primary" onClick={openCreateTag}>
+                        <Plus size={18} /> New Tag
+                    </button>
+                </div>
+
+                {loadingTags ? (
+                    <div>Loading tags...</div>
+                ) : (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '1rem' }}>
+                        {tags.map(tag => (
+                            <div key={tag.id} className="tag"
+                                style={{
+                                    paddingRight: '0.5rem',
+                                    backgroundColor: (tag.color || '#6366f1') + '1A',
+                                    color: tag.color || '#6366f1',
+                                    borderColor: (tag.color || '#6366f1') + '33',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '0.5rem'
+                                }}>
+                                <span>{tag.name}</span>
+                                <div style={{ display: 'flex', gap: '0.25rem' }}>
+                                    <button onClick={() => openEditTag(tag)} style={{ padding: '0.25rem', color: 'inherit', cursor: 'pointer' }}>
+                                        <Pencil size={14} />
+                                    </button>
+                                    <button onClick={() => handleDeleteTag(tag.id)} style={{ padding: '0.25rem', color: 'inherit', cursor: 'pointer' }}>
+                                        <Trash2 size={14} />
+                                    </button>
+                                </div>
+                            </div>
+                        ))}
+                        {tags.length === 0 && <p style={{ color: 'var(--text-secondary)' }}>No tags found.</p>}
+                    </div>
+                )}
+            </div>
+
+            {/* Tag Modal */}
+            {showTagModal && (
+                <div style={{
+                    position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+                    backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000
+                }}>
+                    <div className="card" style={{ width: '400px', maxWidth: '90%' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+                            <h3>{editingTag ? 'Edit Tag' : 'New Tag'}</h3>
+                            <button onClick={() => setShowTagModal(false)}><X size={20} /></button>
+                        </div>
+                        <div style={{ marginBottom: '1rem' }}>
+                            <label style={{ display: 'block', marginBottom: '0.5rem' }}>Name</label>
+                            <input
+                                className="input"
+                                value={tagForm.name}
+                                onChange={e => setTagForm({ ...tagForm, name: e.target.value })}
+                                autoFocus
+                            />
+                        </div>
+                        <div style={{ marginBottom: '1.5rem' }}>
+                            <label style={{ display: 'block', marginBottom: '0.5rem' }}>Color</label>
+                            <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                                {PRESET_COLORS.map(c => (
+                                    <button
+                                        key={c}
+                                        type="button"
+                                        onClick={() => setTagForm({ ...tagForm, color: c })}
+                                        style={{
+                                            width: '24px', height: '24px', borderRadius: '50%', backgroundColor: c,
+                                            border: tagForm.color === c ? '2px solid white' : '2px solid transparent',
+                                            boxShadow: tagForm.color === c ? `0 0 0 2px ${c}` : 'none',
+                                            cursor: 'pointer'
+                                        }}
+                                    />
+                                ))}
+                            </div>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem' }}>
+                            <button className="btn btn-outline" onClick={() => setShowTagModal(false)}>Cancel</button>
+                            <button className="btn btn-primary" onClick={handleSaveTag} disabled={!tagForm.name}>Save</button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             <div className="card" style={{ marginBottom: '2rem' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
