@@ -5,7 +5,8 @@ import RecipeForm from './components/RecipeForm';
 import PDFImport from './components/PDFImport';
 import ShoppingList from './components/ShoppingList';
 import Admin from './components/Admin';
-import { UtensilsCrossed, ShoppingCart, ChefHat, Settings } from 'lucide-react';
+import RecipeFinder from './components/RecipeFinder';
+import { UtensilsCrossed, ShoppingCart, ChefHat, Settings, Sparkles } from 'lucide-react';
 
 import { useLocation } from 'react-router-dom';
 
@@ -15,7 +16,7 @@ function Content() {
   const [planRecipes, setPlanRecipes] = useState([]);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const location = useLocation();
-  const showSidebar = location.pathname !== '/import' && location.pathname !== '/shopping-list' && location.pathname !== '/admin';
+  const showSidebar = location.pathname !== '/import' && location.pathname !== '/shopping-list' && location.pathname !== '/admin' && location.pathname !== '/finder';
 
   return (
     <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
@@ -39,6 +40,9 @@ function Content() {
 
           <div className={`nav-links ${isMenuOpen ? 'open' : ''}`}>
             <Link to="/" className="nav-link" onClick={() => setIsMenuOpen(false)}>Recipes</Link>
+            <Link to="/finder" className="nav-link" onClick={() => setIsMenuOpen(false)} style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+              <Sparkles size={16} /> AI Finder
+            </Link>
             <Link to="/meal-plans" className="nav-link" onClick={() => setIsMenuOpen(false)}>Meal Plans</Link>
             <Link to="/import" className="nav-link" onClick={() => setIsMenuOpen(false)}>Import PDF</Link>
             <Link to="/shopping-list" className="nav-link" onClick={() => setIsMenuOpen(false)}>
@@ -55,6 +59,7 @@ function Content() {
         <div style={{ minWidth: 0, gridColumn: showSidebar ? '1 / -2' : '1 / -1' }}>
           <Routes>
             <Route path="/" element={<RecipeList selectedRecipes={planRecipes} setSelectedRecipes={setPlanRecipes} />} />
+            <Route path="/finder" element={<RecipeFinder />} />
             <Route path="/meal-plans" element={<MealPlanList onLoadPlan={setPlanRecipes} />} />
             <Route path="/create" element={<RecipeForm />} />
             <Route path="/edit/:id" element={<RecipeForm />} />

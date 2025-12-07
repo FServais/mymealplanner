@@ -146,3 +146,43 @@ def get_import_status(task_id: str, db: Session = Depends(database.get_db)):
         response["error"] = task.error
     
     return response
+
+@router.post("/search/ai", response_model=List[schemas.Recipe])
+def search_recipes_ai(
+    request: schemas.RecipeSearchRequest,
+    db: Session = Depends(database.get_db)
+):
+    """
+    Search for recipes using AI to find the best matches for the given ingredients.
+    """
+    # 1. Get recipes containing ANY of the ingredients (broad search)
+    # We use the existing filter logic or direct query
+    # To be efficient, we might want to get all recipes that match at least one ingredient
+    # relying on the existing crud.get_recipes might be enough if we pass all ingredients
+    
+    # Using crud.get_recipes with ingredients list (OR logic)
+    candidate_recipes = crud.get_recipes(db, ingredients=request.ingredients, limit=50) # Limit candidate pool
+    
+    if not candidate_recipes:
+        return []
+
+    # 2. Use AI to select top 5
+    selected_ids = services.find_best_recipes(
+        ingredients=request.ingredients,
+        recipes=candidate_recipes,
+        provider=request.provider
+    )
+    
+    # 3. Return full recipe objects (preserving order from AI if possible, but SQL IN clause doesn't guarantee order)
+    # So we fetch them and reorder in python
+    
+    if not selected_ids:
+        return []
+        
+    final_recipes = db.query(models.Recipe).filter(models.Recipe.id.in_(selected_ids)).all()
+    
+    # Sort final_recipes based on the order of selected_ids
+    id_map = {r.id: r for r in final_recipes}
+    ordered_recipes = [id_map[id] for id in selected_ids if id in id_map]
+    
+    return ordered_recipes

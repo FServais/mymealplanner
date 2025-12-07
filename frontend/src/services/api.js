@@ -47,4 +47,6 @@ export const getMealPlans = () => api.get('/meal-plans/');
 export const getMealPlan = (id) => api.get(`/meal-plans/${id}`);
 export const deleteMealPlan = (id) => api.delete(`/meal-plans/${id}`);
 
+export const searchRecipesAI = (ingredients, provider = 'gemini') => api.post('/recipes/search/ai', { ingredients, provider });
+
 export default api;

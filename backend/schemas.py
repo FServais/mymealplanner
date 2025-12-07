@@ -51,9 +51,6 @@ class RecipeBase(BaseModel):
 class RecipeCreate(RecipeBase):
     ingredients: List[IngredientCreate]
     instructions: List[InstructionCreate]
-class RecipeCreate(RecipeBase):
-    ingredients: List[IngredientCreate]
-    instructions: List[InstructionCreate]
     tags: List[Union[str, TagCreate]] = []
 
 class Recipe(RecipeBase):
@@ -78,3 +75,7 @@ class MealPlan(MealPlanBase):
 
     class Config:
         orm_mode = True
+
+class RecipeSearchRequest(BaseModel):
+    ingredients: List[str]
+    provider: Optional[str] = "gemini"

@@ -799,6 +799,110 @@ def _suggest_duplicates_gemini(filtered_ingredients: List[str]) -> List[dict]:
         genai.configure(api_key=api_key)
         model = genai.GenerativeModel("gemini-2.5-flash-lite")
 
+        # Hybrid approach: prefix grouping + similarity within groups
+        # This is O(n) for grouping + O(k²) for similarity within each group (where k << n)
+        
+        prompt = f"""{DUPLICATE_PROMPT}
+
+Here is the list of ingredients:
+{json.dumps(filtered_ingredients)}
+"""
+        response = model.generate_content(
+            prompt,
+            generation_config=genai.GenerationConfig(
+                response_mime_type="application/json"
+            )
+        )
+
+        result = json.loads(response.text)
+        duplicates = result.get("duplicates", [])
+        
+        # Filter out groups with less than 2 sources
+        valid_duplicates = [d for d in duplicates if len(d.get("sources", [])) >= 2]
+        return valid_duplicates
+
+    except Exception as e:
+        print(f"[suggest_duplicates_gemini] ERROR: {str(e)}")
+        return []
+
+
+def find_best_recipes(ingredients: List[str], recipes: List[dict], provider: str = "gemini") -> List[int]:
+    """
+    Selects the best matching recipes from a list based on available ingredients.
+    
+    Args:
+        ingredients: List of ingredients the user has.
+        recipes: List of candidate recipes (serialized).
+        provider: LLM provider ("openai" or "gemini").
+        
+    Returns:
+        List[int]: List of selected recipe IDs.
+    """
+    provider = provider.lower().strip()
+    
+    # Serialize recipes to a format suitable for the LLM
+    # We only need ID, name, and ingredients to save context window
+    serialized_recipes = []
+    for r in recipes:
+        serialized_recipes.append({
+            "id": r.id,
+            "name": r.name,
+            "ingredients": [i.name for i in r.ingredients]
+        })
+        
+    if provider == "gemini":
+        return _find_best_recipes_gemini(ingredients, serialized_recipes)
+    else:
+        # Fallback to simple matching if not Gemini (or implement OpenAI later)
+        print(f"Provider {provider} not implemented for find_best_recipes, returning top 5")
+        return [r["id"] for r in serialized_recipes[:5]]
+
+
+def _find_best_recipes_gemini(ingredients: List[str], recipes: List[dict]) -> List[int]:
+    api_key = os.environ.get("GEMINI_API_KEY")
+    if not api_key:
+        print("No Gemini API key provided.")
+        return []
+
+    if not recipes:
+        return []
+
+    try:
+        genai.configure(api_key=api_key)
+        model = genai.GenerativeModel("gemini-2.5-flash-lite")
+        
+        prompt = f"""
+You are a smart chef assistant. I have a list of ingredients and a list of recipes.
+Please select the top 5 recipes that I can cook best with my ingredients.
+Prioritize recipes where I have most of the main ingredients.
+Ignore basic pantry staples (salt, pepper, oil, water) if missing.
+
+My Ingredients:
+{json.dumps(ingredients)}
+
+Candidate Recipes:
+{json.dumps(recipes)}
+
+Output a JSON object with a "selected_recipe_ids" key containing the list of integer IDs of the 5 best recipes.
+Example: {{"selected_recipe_ids": [1, 10, 4]}}
+"""
+
+        response = model.generate_content(
+            prompt,
+            generation_config=genai.GenerationConfig(
+                response_mime_type="application/json"
+            )
+        )
+        
+        result = json.loads(response.text)
+        return result.get("selected_recipe_ids", [])
+
+    except Exception as e:
+        print(f"Error in _find_best_recipes_gemini: {e}")
+        # Fallback: return top 5
+        return [r["id"] for r in recipes[:5]]
+
+
         ingredients_text = json.dumps(filtered_ingredients)
         print(f"[suggest_duplicates_gemini] Prepared ingredient list, length: {len(ingredients_text)} chars")
 
