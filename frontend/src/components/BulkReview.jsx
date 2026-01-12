@@ -1,4 +1,7 @@
 import React, { useState, useEffect } from 'react';
+import { Document, Page, pdfjs } from 'react-pdf';
+import 'react-pdf/dist/Page/AnnotationLayer.css';
+import 'react-pdf/dist/Page/TextLayer.css';
 import {
     getSourceFiles,
     getRecipes,
@@ -17,6 +20,9 @@ import {
     Check,
     AlertCircle
 } from 'lucide-react';
+
+// Configure PDF.js worker
+pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
 
 // efarmz CDN URL for recipe PDFs
 const EFARMZ_CDN_BASE = 'https://cdn.efarmz.be/recipes/FR';
@@ -45,6 +51,9 @@ function BulkReview() {
     // PDF state
     const [pdfUrl, setPdfUrl] = useState(null);
     const [pdfFile, setPdfFile] = useState(null);
+    const [numPages, setNumPages] = useState(null);
+    const [pageNumber, setPageNumber] = useState(1);
+    const [pdfError, setPdfError] = useState(null);
     const [showRawText, setShowRawText] = useState(false);
     const [rawText, setRawText] = useState('');
     const [rawLines, setRawLines] = useState([]);
@@ -83,6 +92,12 @@ function BulkReview() {
             setSaveMessage(null);
             setRawText('');
             setRawLines([]);
+
+            // Reset PDF state
+            setNumPages(null);
+            setPageNumber(1);
+            setPdfError(null);
+            setPdfFile(null);
 
             // Load PDF from efarmz CDN based on source_file
             if (currentRecipe.source_file) {
@@ -166,8 +181,21 @@ function BulkReview() {
         if (!file) return;
 
         setPdfFile(file);
+        setNumPages(null);
+        setPageNumber(1);
+        setPdfError(null);
         // Create a local URL for the uploaded file to preview
         setPdfUrl(URL.createObjectURL(file));
+    }
+
+    function onDocumentLoadSuccess({ numPages }) {
+        setNumPages(numPages);
+        setPdfError(null);
+    }
+
+    function onDocumentLoadError(error) {
+        console.error('PDF load error:', error);
+        setPdfError('Failed to load PDF. CORS may be blocking the request.');
     }
 
     async function handleExtractText() {
@@ -336,11 +364,91 @@ function BulkReview() {
                             </div>
 
                             {pdfUrl ? (
-                                <iframe
-                                    src={pdfUrl}
-                                    style={{ width: '100%', height: '500px', border: '1px solid var(--border)' }}
-                                    title="PDF Preview"
-                                />
+                                <div style={{
+                                    border: '1px solid var(--border)',
+                                    borderRadius: '4px',
+                                    overflow: 'hidden'
+                                }}>
+                                    <Document
+                                        file={pdfUrl}
+                                        onLoadSuccess={onDocumentLoadSuccess}
+                                        onLoadError={onDocumentLoadError}
+                                        loading={
+                                            <div style={{
+                                                height: '500px',
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'center'
+                                            }}>
+                                                Loading PDF...
+                                            </div>
+                                        }
+                                        error={
+                                            <div style={{
+                                                height: '500px',
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'center',
+                                                flexDirection: 'column',
+                                                color: 'var(--error)',
+                                                padding: '1rem',
+                                                textAlign: 'center'
+                                            }}>
+                                                <AlertCircle size={48} style={{ marginBottom: '0.5rem' }} />
+                                                <p>{pdfError || 'Failed to load PDF'}</p>
+                                                <p style={{ fontSize: '0.875rem', color: 'var(--text-secondary)' }}>
+                                                    Try uploading the PDF manually using the button above
+                                                </p>
+                                            </div>
+                                        }
+                                    >
+                                        <div style={{
+                                            height: '500px',
+                                            overflow: 'auto',
+                                            display: 'flex',
+                                            justifyContent: 'center',
+                                            background: 'var(--background)'
+                                        }}>
+                                            <Page
+                                                pageNumber={pageNumber}
+                                                width={450}
+                                                renderTextLayer={false}
+                                                renderAnnotationLayer={false}
+                                            />
+                                        </div>
+                                    </Document>
+                                    {numPages && numPages > 1 && (
+                                        <div style={{
+                                            display: 'flex',
+                                            justifyContent: 'center',
+                                            alignItems: 'center',
+                                            gap: '1rem',
+                                            padding: '0.5rem',
+                                            borderTop: '1px solid var(--border)',
+                                            background: 'var(--surface)'
+                                        }}>
+                                            <button
+                                                onClick={() => setPageNumber(p => Math.max(1, p - 1))}
+                                                disabled={pageNumber <= 1}
+                                                className="btn-secondary"
+                                                style={{ padding: '0.25rem 0.5rem' }}
+                                            >
+                                                <ChevronLeft size={16} />
+                                            </button>
+                                            <span style={{ fontSize: '0.875rem' }}>
+                                                Page {pageNumber} of {numPages}
+                                            </span>
+                                            <button
+                                                onClick={() => setPageNumber(p => Math.min(numPages, p + 1))}
+                                                disabled={pageNumber >= numPages}
+                                                className="btn-secondary"
+                                                style={{ padding: '0.25rem 0.5rem' }}
+                                            >
+                                                <ChevronRight size={16} />
+                                            </button>
+                                        </div>
+                                    )}
+                                </div>
                             ) : (
                                 <div style={{
                                     height: '500px',
