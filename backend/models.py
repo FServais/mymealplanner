@@ -78,3 +78,19 @@ class ImportTask(Base):
     error = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class IngredientMigration(Base):
+    """Tracks ingredient re-extraction migration progress for each recipe."""
+    __tablename__ = "ingredient_migrations"
+
+    id = Column(Integer, primary_key=True, index=True)
+    recipe_id = Column(Integer, ForeignKey("recipes.id"), index=True)
+    status = Column(String, index=True)  # pending, processing, completed, failed, skipped
+    original_count = Column(Integer)  # Number of ingredients before migration
+    new_count = Column(Integer, nullable=True)  # Number of ingredients after migration
+    error = Column(Text, nullable=True)  # Error message if failed
+    created_at = Column(DateTime, default=datetime.utcnow)
+    completed_at = Column(DateTime, nullable=True)
+
+    recipe = relationship("Recipe")

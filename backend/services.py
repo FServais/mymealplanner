@@ -1,9 +1,14 @@
 import os
 import uuid
+import re
+import unicodedata
+import time
 from typing import List
 import pypdf
 import io
 import json
+import httpx
+from datetime import datetime
 from openai import (
     OpenAI,
     AuthenticationError,
@@ -103,23 +108,68 @@ def extract_text_from_pdf(file_content: bytes) -> str:
         print(f"Error extracting text: {e}")
         return ""
 
+
+def preprocess_pdf_text(text: str) -> str:
+    """
+    Cleans raw PDF text to improve ingredient extraction accuracy.
+
+    - Normalizes unicode characters (curly quotes, em-dashes, fractions)
+    - Joins hyphenated line breaks
+    - Normalizes whitespace
+    - Removes common PDF artifacts
+    """
+    if not text:
+        return ""
+
+    # Normalize unicode (NFKC converts fancy quotes, fractions, etc. to standard forms)
+    text = unicodedata.normalize('NFKC', text)
+
+    # Join hyphenated line breaks (e.g., "ingré-\ndient" -> "ingrédient")
+    text = re.sub(r'(\w)-\n(\w)', r'\1\2', text)
+
+    # Normalize multiple spaces/tabs to single space
+    text = re.sub(r'[ \t]+', ' ', text)
+
+    # Normalize multiple newlines to max 2
+    text = re.sub(r'\n{3,}', '\n\n', text)
+
+    # Remove common PDF artifacts (page numbers like "Page 1", "1/2", etc.)
+    text = re.sub(r'\bPage\s*\d+\b', '', text, flags=re.IGNORECASE)
+
+    # Remove isolated single digits that are likely page numbers
+    text = re.sub(r'^\s*\d{1,2}\s*$', '', text, flags=re.MULTILINE)
+
+    return text.strip()
+
+
 RAW_ING_SYSTEM_PROMPT = """
-You are a specialized ingredient line extractor.
+You are a specialized ingredient line extractor for recipe PDFs.
 
-Goal:
-From raw text extracted from a recipe PDF, capture ALL lines that look like ingredients,
-without filtering by serving size.
+CRITICAL GOAL:
+Extract ALL possible ingredients from the text. It is MUCH better to capture too many lines than to miss any ingredients.
 
-What to capture:
-- Any line or row that looks like an ingredient: typically contains a quantity and a food name.
-- Include lines from ingredient sections and tables (e.g. with columns for 2 pers, 3-4 pers, etc.).
-- Ignore headers like "Ingrédients", "Dans la box", "Préparation", page numbers, disclaimers.
+What to CAPTURE (be inclusive):
+- Any line containing food items, EVEN WITHOUT quantities
+- Ingredient table rows (may have multiple columns for serving sizes like 2 pers, 3-4 pers)
+- Items listed with bullets, dashes, or numbers
+- Seasonings like "sel", "poivre", "sel et poivre", "à volonté"
+- Garnishes and optional ingredients
+- Items from "Dans la box" or "Vous avez besoin de" sections - these ARE ingredients!
+- Items from "Ingrédients" sections
+- Spices, herbs, oils, and condiments even without quantities
+
+What to EXCLUDE (be strict):
+- Section headers ONLY (single words like "Ingrédients:", "Préparation:", "Instructions:")
+- Cooking equipment ("casserole", "poêle", "four", "couteau")
+- Time indicators ("15 min", "cuisson 20 min", "repos 30 min")
+- Page numbers and disclaimers
+- Preparation steps/instructions
 
 For each ingredient line:
-- raw_text: the raw line or row as it appears in the text (you may join broken lines).
-- serving_hint: any hint about serving size if you can infer it from the context, such as:
-    "2 pers", "2 personnes", "2p", "3-4 pers", etc.
-  If there is no clear hint, use null.
+- raw_text: the line as it appears (you may join broken lines)
+- serving_hint: any serving size indicator ("2 pers", "3-4 pers", null if unknown)
+
+IMPORTANT: When in doubt, INCLUDE the line. Missing an ingredient is worse than including an extra line that can be filtered later.
 
 Output:
 - Always respond by CALLING the extract_raw_ingredients function with arguments matching its JSON schema.
@@ -164,18 +214,14 @@ RAW_ING_TOOLS = [
 PARSE_SYSTEM_PROMPT = """
 You are a specialized recipe parser.
 
-Goal:
-From raw text extracted from a PDF, and from a list of raw ingredient lines,
-extract:
-1. The clean recipe name.
-2. A structured list of ingredients for 2 people only.
-3. A clean, ordered list of instructions.
+CRITICAL GOAL:
+Extract ALL ingredients from the recipe. Completeness is more important than precision - NEVER skip an ingredient.
 
 You are given:
 - The full raw recipe text (noisy PDF extraction).
 - A pre-extracted list of raw ingredient lines with serving-size hints.
 
-Use the raw ingredient lines as your primary source for ingredients to avoid missing any.
+The raw ingredient lines are your PRIMARY source - you MUST include ALL of them as ingredients.
 
 Recipe name rules:
 - Identify the main recipe title.
@@ -183,15 +229,20 @@ Recipe name rules:
 - Prefer the most prominent or repeated title.
 - Output a short, human-friendly name.
 
-Ingredients rules:
-- The text may contain quantities for several serving sizes (e.g., 2 people, 3–4 people, etc.).
-- Extract ONLY the ingredient quantities that apply to 2 people, exactly as written in the text.
-- For each ingredient, fill:
-  - name: ingredient description. Clean up the name by removing country codes or suffixes indicating origin (e.g., "Oignon BE" -> "Oignon", "Carottes FR" -> "Carottes").
-  - quantity: the quantity for 2 people as written (e.g., "200 g", "1 oignon", "1/2 sachet").
-  - unit: the explicit unit ("g", "ml", "tbsp", etc.) if present, otherwise null.
-- Do NOT scale or convert quantities.
-- Do NOT invent quantities; if a 2-person quantity is missing, skip that ingredient.
+Ingredients rules (CRITICAL - read carefully):
+1. EVERY raw ingredient line MUST appear in your output. Do NOT skip any.
+2. For quantities:
+   - If a "2 personnes"/"2 pers" quantity exists, use it.
+   - If only "3-4 personnes" quantity exists, use it as-is (do not scale).
+   - If NO quantity is given (e.g., seasonings), use "QS" (quantité suffisante) or "à volonté".
+   - NEVER leave quantity empty - use "QS" if truly unknown.
+3. For ingredient names:
+   - Clean up the name by removing country codes (e.g., "Oignon BE" -> "Oignon").
+   - Keep descriptive modifiers (e.g., "Tomates cerises" stays as-is).
+4. For seasonings like "sel", "poivre", "sel et poivre":
+   - Include them with quantity "QS" or "à volonté".
+5. Do NOT scale or convert quantities.
+6. Do NOT invent specific quantities, but DO include the ingredient with "QS".
 
 Instructions rules:
 - Extract instructions as an ordered list of cooking steps.
@@ -284,6 +335,9 @@ def parse_recipe_with_llm(text: str, api_key: str = None, provider: str = "opena
             - ingredients (list): List of dicts with 'name' and 'quantity' keys
             - instructions (list): List of dicts with 'step_number' and 'text' keys
     """
+    # Preprocess text to clean PDF artifacts
+    text = preprocess_pdf_text(text)
+
     provider = provider.lower().strip()
 
     if provider == "gemini":
@@ -427,7 +481,7 @@ def _parse_with_gemini(text: str, api_key: str = None):
 
     try:
         genai.configure(api_key=api_key)
-        model = genai.GenerativeModel("gemini-2.5-flash-lite")
+        model = genai.GenerativeModel("gemini-2.5-flash")
 
         # Stage 1: Extract raw ingredient lines
         raw_prompt = f"""{RAW_ING_SYSTEM_PROMPT}
@@ -797,7 +851,7 @@ def _suggest_duplicates_gemini(filtered_ingredients: List[str]) -> List[dict]:
 
     try:
         genai.configure(api_key=api_key)
-        model = genai.GenerativeModel("gemini-2.5-flash-lite")
+        model = genai.GenerativeModel("gemini-2.5-flash")
 
         # Hybrid approach: prefix grouping + similarity within groups
         # This is O(n) for grouping + O(k²) for similarity within each group (where k << n)
@@ -869,7 +923,7 @@ def _find_best_recipes_gemini(ingredients: List[str], recipes: List[dict]) -> Li
 
     try:
         genai.configure(api_key=api_key)
-        model = genai.GenerativeModel("gemini-2.5-flash-lite")
+        model = genai.GenerativeModel("gemini-2.5-flash")
         
         prompt = f"""
 You are a smart chef assistant. I have a list of ingredients and a list of recipes.
@@ -1027,7 +1081,7 @@ def _extract_raw_ingredients_gemini(text: str) -> dict:
 
     try:
         genai.configure(api_key=api_key)
-        model = genai.GenerativeModel("gemini-2.5-flash-lite")
+        model = genai.GenerativeModel("gemini-2.5-flash")
 
         prompt = f"""{RAW_ING_SYSTEM_PROMPT}
 
@@ -1056,3 +1110,198 @@ Example response:
     except Exception as e:
         print(f"[extract_raw_ingredients_gemini] ERROR: {e}")
         return {"raw_lines": []}
+
+
+# ============================================================================
+# INGREDIENT MIGRATION FUNCTIONS
+# ============================================================================
+
+EFARMZ_CDN_BASE = "https://cdn.efarmz.be/recipes/FR"
+
+
+def fetch_pdf_from_cdn(filename: str, timeout: float = 30.0) -> bytes:
+    """
+    Fetch a PDF from the efarmz CDN.
+
+    Args:
+        filename: The PDF filename (e.g., "recipe.pdf")
+        timeout: Request timeout in seconds
+
+    Returns:
+        PDF file content as bytes
+
+    Raises:
+        Exception: If the PDF cannot be fetched
+    """
+    url = f"{EFARMZ_CDN_BASE}/{filename}"
+    print(f"[fetch_pdf_from_cdn] Fetching: {url}")
+
+    try:
+        with httpx.Client(timeout=timeout, follow_redirects=True) as client:
+            response = client.get(url)
+            response.raise_for_status()
+            print(f"[fetch_pdf_from_cdn] Success: {len(response.content)} bytes")
+            return response.content
+    except httpx.HTTPStatusError as e:
+        print(f"[fetch_pdf_from_cdn] HTTP error {e.response.status_code}: {url}")
+        raise Exception(f"HTTP {e.response.status_code}: Failed to fetch PDF from CDN")
+    except httpx.RequestError as e:
+        print(f"[fetch_pdf_from_cdn] Request error: {e}")
+        raise Exception(f"Request error: {str(e)}")
+
+
+def run_ingredient_migration(provider: str = "gemini", rate_limit: float = 1.0):
+    """
+    Background task to re-process all recipes with source_file.
+
+    For each recipe:
+    1. Fetch PDF from efarmz CDN
+    2. Re-parse with improved prompts
+    3. Compare ingredient counts
+    4. Update if new_count >= original_count
+
+    Args:
+        provider: LLM provider to use ("openai" or "gemini")
+        rate_limit: Delay in seconds between API calls
+    """
+    from database import SessionLocal
+    from models import Recipe, Ingredient, IngredientMigration
+    from routers.migration import set_migration_running, is_migration_running
+
+    print(f"[Migration] Starting ingredient migration with provider={provider}, rate_limit={rate_limit}s")
+
+    db = SessionLocal()
+    processed_count = 0
+    try:
+        # Get all recipes with source_file
+        recipes = db.query(Recipe).filter(
+            Recipe.source_file.isnot(None),
+            Recipe.source_file != ""
+        ).all()
+
+        print(f"[Migration] Found {len(recipes)} total recipes")
+
+        for i, recipe in enumerate(recipes):
+            # Check if we should stop
+            if not is_migration_running():
+                print(f"[Migration] Paused by user after processing {processed_count} recipes")
+                break
+
+            # Check if this recipe was already processed
+            existing = db.query(IngredientMigration).filter(
+                IngredientMigration.recipe_id == recipe.id,
+                IngredientMigration.status.in_(["completed", "skipped", "failed"])
+            ).first()
+
+            if existing:
+                print(f"[Migration] Skipping recipe {i+1}/{len(recipes)}: {recipe.name} (already {existing.status})")
+                continue
+
+            processed_count += 1
+            print(f"[Migration] Processing recipe {i+1}/{len(recipes)}: {recipe.name} (ID: {recipe.id})")
+
+            # Delete any existing 'processing' record for this recipe (from previous interrupted run)
+            db.query(IngredientMigration).filter(
+                IngredientMigration.recipe_id == recipe.id,
+                IngredientMigration.status == "processing"
+            ).delete()
+
+            # Create migration record
+            original_count = len(recipe.ingredients)
+            migration = IngredientMigration(
+                recipe_id=recipe.id,
+                status="processing",
+                original_count=original_count,
+                created_at=datetime.utcnow()
+            )
+            db.add(migration)
+            db.commit()
+
+            try:
+                # Fetch PDF from CDN
+                try:
+                    pdf_content = fetch_pdf_from_cdn(recipe.source_file)
+                except Exception as e:
+                    error_msg = str(e)
+                    if "404" in error_msg:
+                        migration.status = "skipped"
+                        migration.error = "PDF not found on CDN"
+                    else:
+                        migration.status = "failed"
+                        migration.error = error_msg
+                    migration.completed_at = datetime.utcnow()
+                    db.commit()
+                    print(f"[Migration] Skipped/Failed: {error_msg}")
+                    continue
+
+                # Extract text
+                text = extract_text_from_pdf(pdf_content)
+                if not text:
+                    migration.status = "failed"
+                    migration.error = "Could not extract text from PDF"
+                    migration.completed_at = datetime.utcnow()
+                    db.commit()
+                    continue
+
+                # Re-parse with improved prompts
+                recipe_data = parse_recipe_with_llm(text, provider=provider)
+
+                if recipe_data.get("name", "").startswith("Error"):
+                    migration.status = "failed"
+                    migration.error = recipe_data.get("description", "LLM parsing error")
+                    migration.completed_at = datetime.utcnow()
+                    db.commit()
+                    continue
+
+                new_ingredients = recipe_data.get("ingredients", [])
+                new_count = len(new_ingredients)
+                migration.new_count = new_count
+
+                # Update if we found more or equal ingredients
+                if new_count >= original_count:
+                    # Delete existing ingredients
+                    db.query(Ingredient).filter(Ingredient.recipe_id == recipe.id).delete()
+
+                    # Add new ingredients
+                    for ing in new_ingredients:
+                        new_ing = Ingredient(
+                            name=ing.get("name", ""),
+                            quantity=ing.get("quantity", ""),
+                            recipe_id=recipe.id
+                        )
+                        db.add(new_ing)
+
+                    migration.status = "completed"
+                    print(f"[Migration] Updated: {original_count} -> {new_count} ingredients")
+                else:
+                    migration.status = "completed"
+                    print(f"[Migration] Kept original: {original_count} >= {new_count}")
+
+                migration.completed_at = datetime.utcnow()
+                db.commit()
+
+            except Exception as e:
+                print(f"[Migration] ERROR processing recipe {recipe.id}: {e}")
+                import traceback
+                traceback.print_exc()
+                migration.status = "failed"
+                migration.error = str(e)
+                migration.completed_at = datetime.utcnow()
+                db.commit()
+
+            # Rate limiting
+            if rate_limit > 0 and i < len(recipes) - 1:
+                print(f"[Migration] Waiting {rate_limit}s before next recipe...")
+                time.sleep(rate_limit)
+
+        print("[Migration] Migration completed")
+
+    except Exception as e:
+        print(f"[Migration] Fatal error: {e}")
+        import traceback
+        traceback.print_exc()
+
+    finally:
+        set_migration_running(False)
+        db.close()
+        print("[Migration] Background task finished")

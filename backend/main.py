@@ -4,7 +4,7 @@ import logging
 import sys
 import models
 from database import engine
-from routers import recipes, meal_planner, meal_plans, tools, images, pdf_review
+from routers import recipes, meal_planner, meal_plans, tools, images, pdf_review, migration
 
 # Configure logging
 logging.basicConfig(
@@ -41,6 +41,7 @@ app.include_router(meal_planner.router)
 app.include_router(tools.router)
 app.include_router(images.router)
 app.include_router(pdf_review.router)
+app.include_router(migration.router)
 
 @app.get("/")
 def read_root():
