@@ -1,7 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import { Document, Page, pdfjs } from 'react-pdf';
-import 'react-pdf/dist/Page/AnnotationLayer.css';
-import 'react-pdf/dist/Page/TextLayer.css';
 import {
     getSourceFiles,
     getRecipes,
@@ -13,6 +10,7 @@ import {
     ChevronRight,
     Upload,
     FileText,
+    ExternalLink,
     Plus,
     X,
     Save,
@@ -20,9 +18,6 @@ import {
     Check,
     AlertCircle
 } from 'lucide-react';
-
-// Configure PDF.js worker
-pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
 
 // efarmz CDN URL for recipe PDFs
 const EFARMZ_CDN_BASE = 'https://cdn.efarmz.be/recipes/FR';
@@ -51,9 +46,6 @@ function BulkReview() {
     // PDF state
     const [pdfUrl, setPdfUrl] = useState(null);
     const [pdfFile, setPdfFile] = useState(null);
-    const [numPages, setNumPages] = useState(null);
-    const [pageNumber, setPageNumber] = useState(1);
-    const [pdfError, setPdfError] = useState(null);
     const [showRawText, setShowRawText] = useState(false);
     const [rawText, setRawText] = useState('');
     const [rawLines, setRawLines] = useState([]);
@@ -92,14 +84,9 @@ function BulkReview() {
             setSaveMessage(null);
             setRawText('');
             setRawLines([]);
-
-            // Reset PDF state
-            setNumPages(null);
-            setPageNumber(1);
-            setPdfError(null);
             setPdfFile(null);
 
-            // Load PDF from efarmz CDN based on source_file
+            // Set PDF URL from efarmz CDN based on source_file
             if (currentRecipe.source_file) {
                 setPdfUrl(getCdnPdfUrl(currentRecipe.source_file));
             } else {
@@ -176,26 +163,13 @@ function BulkReview() {
         }
     }
 
-    async function handlePdfUpload(e) {
+    function handlePdfUpload(e) {
         const file = e.target.files[0];
         if (!file) return;
 
         setPdfFile(file);
-        setNumPages(null);
-        setPageNumber(1);
-        setPdfError(null);
-        // Create a local URL for the uploaded file to preview
+        // Create a local URL for the uploaded file
         setPdfUrl(URL.createObjectURL(file));
-    }
-
-    function onDocumentLoadSuccess({ numPages }) {
-        setNumPages(numPages);
-        setPdfError(null);
-    }
-
-    function onDocumentLoadError(error) {
-        console.error('PDF load error:', error);
-        setPdfError('Failed to load PDF. CORS may be blocking the request.');
     }
 
     async function handleExtractText() {
@@ -347,10 +321,10 @@ function BulkReview() {
 
                     {/* Main content - side by side */}
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-                        {/* Left: PDF Viewer */}
+                        {/* Left: PDF Source */}
                         <div className="card">
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-                                <h4 style={{ margin: 0 }}>PDF Preview</h4>
+                                <h4 style={{ margin: 0 }}>PDF Source</h4>
                                 <label className="btn-secondary" style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                                     <Upload size={16} />
                                     Upload PDF
@@ -363,109 +337,42 @@ function BulkReview() {
                                 </label>
                             </div>
 
-                            {pdfUrl ? (
-                                <div style={{
-                                    border: '1px solid var(--border)',
-                                    borderRadius: '4px',
-                                    overflow: 'hidden'
-                                }}>
-                                    <Document
-                                        file={pdfUrl}
-                                        onLoadSuccess={onDocumentLoadSuccess}
-                                        onLoadError={onDocumentLoadError}
-                                        loading={
-                                            <div style={{
-                                                height: '500px',
-                                                display: 'flex',
-                                                alignItems: 'center',
-                                                justifyContent: 'center'
-                                            }}>
-                                                Loading PDF...
-                                            </div>
-                                        }
-                                        error={
-                                            <div style={{
-                                                height: '500px',
-                                                display: 'flex',
-                                                alignItems: 'center',
-                                                justifyContent: 'center',
-                                                flexDirection: 'column',
-                                                color: 'var(--error)',
-                                                padding: '1rem',
-                                                textAlign: 'center'
-                                            }}>
-                                                <AlertCircle size={48} style={{ marginBottom: '0.5rem' }} />
-                                                <p>{pdfError || 'Failed to load PDF'}</p>
-                                                <p style={{ fontSize: '0.875rem', color: 'var(--text-secondary)' }}>
-                                                    Try uploading the PDF manually using the button above
-                                                </p>
-                                            </div>
-                                        }
-                                    >
-                                        <div style={{
-                                            height: '500px',
-                                            overflow: 'auto',
-                                            display: 'flex',
-                                            justifyContent: 'center',
-                                            background: 'var(--background)'
-                                        }}>
-                                            <Page
-                                                pageNumber={pageNumber}
-                                                width={450}
-                                                renderTextLayer={false}
-                                                renderAnnotationLayer={false}
-                                            />
-                                        </div>
-                                    </Document>
-                                    {numPages && numPages > 1 && (
-                                        <div style={{
-                                            display: 'flex',
-                                            justifyContent: 'center',
-                                            alignItems: 'center',
-                                            gap: '1rem',
-                                            padding: '0.5rem',
-                                            borderTop: '1px solid var(--border)',
-                                            background: 'var(--surface)'
-                                        }}>
-                                            <button
-                                                onClick={() => setPageNumber(p => Math.max(1, p - 1))}
-                                                disabled={pageNumber <= 1}
-                                                className="btn-secondary"
-                                                style={{ padding: '0.25rem 0.5rem' }}
-                                            >
-                                                <ChevronLeft size={16} />
-                                            </button>
-                                            <span style={{ fontSize: '0.875rem' }}>
-                                                Page {pageNumber} of {numPages}
-                                            </span>
-                                            <button
-                                                onClick={() => setPageNumber(p => Math.min(numPages, p + 1))}
-                                                disabled={pageNumber >= numPages}
-                                                className="btn-secondary"
-                                                style={{ padding: '0.25rem 0.5rem' }}
-                                            >
-                                                <ChevronRight size={16} />
-                                            </button>
-                                        </div>
-                                    )}
-                                </div>
-                            ) : (
-                                <div style={{
-                                    height: '500px',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'center',
-                                    border: '2px dashed var(--border)',
-                                    borderRadius: '8px',
-                                    color: 'var(--text-secondary)'
-                                }}>
+                            <div style={{
+                                padding: '1.5rem',
+                                border: '1px solid var(--border)',
+                                borderRadius: '8px',
+                                background: 'var(--background)'
+                            }}>
+                                {pdfUrl ? (
                                     <div style={{ textAlign: 'center' }}>
-                                        <FileText size={48} style={{ marginBottom: '0.5rem', opacity: 0.5 }} />
-                                        <p>No PDF loaded</p>
-                                        <p style={{ fontSize: '0.875rem' }}>Upload the original PDF to compare</p>
+                                        <FileText size={48} style={{ marginBottom: '1rem', opacity: 0.6 }} />
+                                        <p style={{ marginBottom: '1rem', color: 'var(--text-secondary)' }}>
+                                            {currentRecipe?.source_file || 'Uploaded PDF'}
+                                        </p>
+                                        <a
+                                            href={pdfUrl}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="btn-primary"
+                                            style={{
+                                                display: 'inline-flex',
+                                                alignItems: 'center',
+                                                gap: '0.5rem',
+                                                textDecoration: 'none'
+                                            }}
+                                        >
+                                            <ExternalLink size={16} />
+                                            Open PDF in New Tab
+                                        </a>
                                     </div>
-                                </div>
-                            )}
+                                ) : (
+                                    <div style={{ textAlign: 'center', color: 'var(--text-secondary)' }}>
+                                        <FileText size={48} style={{ marginBottom: '0.5rem', opacity: 0.5 }} />
+                                        <p>No PDF available</p>
+                                        <p style={{ fontSize: '0.875rem' }}>Upload a PDF to extract ingredients</p>
+                                    </div>
+                                )}
+                            </div>
 
                             {/* Extract button */}
                             <div style={{ marginTop: '1rem' }}>
