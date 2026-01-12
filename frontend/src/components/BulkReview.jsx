@@ -3,9 +3,6 @@ import {
     getSourceFiles,
     getRecipes,
     patchRecipeIngredients,
-    uploadPdfForReview,
-    getPdfUrl,
-    listStoredPdfs,
     extractPdfText
 } from '../services/api';
 import {
@@ -21,11 +18,18 @@ import {
     AlertCircle
 } from 'lucide-react';
 
+// efarmz CDN URL for recipe PDFs
+const EFARMZ_CDN_BASE = 'https://cdn.efarmz.be/recipes/FR';
+
+function getCdnPdfUrl(filename) {
+    if (!filename) return null;
+    return `${EFARMZ_CDN_BASE}/${encodeURIComponent(filename)}`;
+}
+
 function BulkReview() {
     // Filter state
     const [sourceFiles, setSourceFiles] = useState([]);
     const [selectedSourceFile, setSelectedSourceFile] = useState('');
-    const [storedPdfs, setStoredPdfs] = useState([]);
 
     // Recipe list state
     const [recipes, setRecipes] = useState([]);
@@ -51,7 +55,6 @@ function BulkReview() {
     // Load source files on mount
     useEffect(() => {
         loadSourceFiles();
-        loadStoredPdfs();
     }, []);
 
     // Load recipes when source file changes
@@ -81,14 +84,14 @@ function BulkReview() {
             setRawText('');
             setRawLines([]);
 
-            // Try to load PDF if it matches source_file
-            if (currentRecipe.source_file && storedPdfs.includes(currentRecipe.source_file)) {
-                setPdfUrl(getPdfUrl(currentRecipe.source_file));
+            // Load PDF from efarmz CDN based on source_file
+            if (currentRecipe.source_file) {
+                setPdfUrl(getCdnPdfUrl(currentRecipe.source_file));
             } else {
                 setPdfUrl(null);
             }
         }
-    }, [currentRecipe, storedPdfs]);
+    }, [currentRecipe]);
 
     async function loadSourceFiles() {
         try {
@@ -96,15 +99,6 @@ function BulkReview() {
             setSourceFiles(response.data);
         } catch (error) {
             console.error('Failed to load source files:', error);
-        }
-    }
-
-    async function loadStoredPdfs() {
-        try {
-            const response = await listStoredPdfs();
-            setStoredPdfs(response.data);
-        } catch (error) {
-            console.error('Failed to load stored PDFs:', error);
         }
     }
 
@@ -172,17 +166,8 @@ function BulkReview() {
         if (!file) return;
 
         setPdfFile(file);
-
-        const formData = new FormData();
-        formData.append('file', file);
-
-        try {
-            await uploadPdfForReview(formData);
-            await loadStoredPdfs();
-            setPdfUrl(getPdfUrl(file.name));
-        } catch (error) {
-            console.error('Failed to upload PDF:', error);
-        }
+        // Create a local URL for the uploaded file to preview
+        setPdfUrl(URL.createObjectURL(file));
     }
 
     async function handleExtractText() {
@@ -192,12 +177,16 @@ function BulkReview() {
         try {
             const formData = new FormData();
 
-            // If we have an uploaded file, use that; otherwise fetch from stored
+            // If we have an uploaded file, use that; otherwise fetch from CDN
             if (pdfFile) {
                 formData.append('file', pdfFile);
-            } else if (currentRecipe?.source_file && storedPdfs.includes(currentRecipe.source_file)) {
-                // Fetch the stored PDF and re-upload for extraction
-                const response = await fetch(getPdfUrl(currentRecipe.source_file));
+            } else if (currentRecipe?.source_file) {
+                // Fetch the PDF from efarmz CDN and send for extraction
+                const cdnUrl = getCdnPdfUrl(currentRecipe.source_file);
+                const response = await fetch(cdnUrl);
+                if (!response.ok) {
+                    throw new Error(`Failed to fetch PDF from CDN: ${response.status}`);
+                }
                 const blob = await response.blob();
                 formData.append('file', new File([blob], currentRecipe.source_file, { type: 'application/pdf' }));
             } else {
@@ -374,7 +363,7 @@ function BulkReview() {
                             <div style={{ marginTop: '1rem' }}>
                                 <button
                                     onClick={handleExtractText}
-                                    disabled={extracting || (!pdfFile && !storedPdfs.includes(currentRecipe?.source_file))}
+                                    disabled={extracting || (!pdfFile && !currentRecipe?.source_file)}
                                     className="btn-secondary"
                                     style={{ width: '100%' }}
                                 >
