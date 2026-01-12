@@ -58,9 +58,19 @@ def delete_tag(tag_id: int, db: Session = Depends(database.get_db)):
     return {"ok": True}
 
 @router.get("/ingredients", response_model=List[str])
-@router.get("/ingredients", response_model=List[str])
 def read_ingredients(db: Session = Depends(database.get_db)):
     return crud.get_all_ingredients(db)
+
+@router.get("/source-files", response_model=List[str])
+def get_source_files(db: Session = Depends(database.get_db)):
+    """Get distinct source_file values for filtering PDF imports."""
+    from sqlalchemy import distinct
+    results = db.query(distinct(models.Recipe.source_file))\
+                .filter(models.Recipe.source_file.isnot(None))\
+                .filter(models.Recipe.source_file != "")\
+                .order_by(models.Recipe.source_file)\
+                .all()
+    return [r[0] for r in results]
 
 @router.get("/count")
 def read_recipe_count(
@@ -91,6 +101,33 @@ def update_recipe(recipe_id: int, recipe: schemas.RecipeCreate, db: Session = De
 def delete_recipe(recipe_id: int, db: Session = Depends(database.get_db)):
     crud.delete_recipe(db, recipe_id=recipe_id)
     return {"ok": True}
+
+@router.patch("/{recipe_id}/ingredients", response_model=schemas.Recipe)
+def patch_recipe_ingredients(
+    recipe_id: int,
+    ingredients: List[schemas.IngredientCreate],
+    db: Session = Depends(database.get_db)
+):
+    """Quick update of only ingredients for a recipe (for bulk review workflow)."""
+    db_recipe = crud.get_recipe(db, recipe_id=recipe_id)
+    if db_recipe is None:
+        raise HTTPException(status_code=404, detail="Recipe not found")
+
+    # Delete existing ingredients
+    db.query(models.Ingredient).filter(models.Ingredient.recipe_id == recipe_id).delete()
+
+    # Add new ingredients
+    for ing in ingredients:
+        db_ingredient = models.Ingredient(
+            name=ing.name,
+            quantity=ing.quantity,
+            recipe_id=recipe_id
+        )
+        db.add(db_ingredient)
+
+    db.commit()
+    db.refresh(db_recipe)
+    return db_recipe
 
 @router.post("/import/pdf")
 async def import_recipe_pdf(

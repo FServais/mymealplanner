@@ -6,7 +6,8 @@ import PDFImport from './components/PDFImport';
 import ShoppingList from './components/ShoppingList';
 import Admin from './components/Admin';
 import RecipeFinder from './components/RecipeFinder';
-import { UtensilsCrossed, ShoppingCart, ChefHat, Settings, Sparkles } from 'lucide-react';
+import BulkReview from './components/BulkReview';
+import { UtensilsCrossed, ShoppingCart, ChefHat, Settings, Sparkles, ClipboardCheck } from 'lucide-react';
 
 import { useLocation } from 'react-router-dom';
 
@@ -16,7 +17,7 @@ function Content() {
   const [planRecipes, setPlanRecipes] = useState([]);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const location = useLocation();
-  const showSidebar = location.pathname !== '/import' && location.pathname !== '/shopping-list' && location.pathname !== '/admin' && location.pathname !== '/finder';
+  const showSidebar = location.pathname !== '/import' && location.pathname !== '/shopping-list' && location.pathname !== '/admin' && location.pathname !== '/finder' && location.pathname !== '/review';
 
   return (
     <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
@@ -48,6 +49,9 @@ function Content() {
             <Link to="/shopping-list" className="nav-link" onClick={() => setIsMenuOpen(false)}>
               <ShoppingCart size={20} /> Shopping List
             </Link>
+            <Link to="/review" className="nav-link" onClick={() => setIsMenuOpen(false)}>
+              <ClipboardCheck size={20} /> Review
+            </Link>
             <Link to="/admin" className="nav-link" onClick={() => setIsMenuOpen(false)}>
               <Settings size={20} /> Admin
             </Link>
@@ -65,6 +69,7 @@ function Content() {
             <Route path="/edit/:id" element={<RecipeForm />} />
             <Route path="/import" element={<PDFImport />} />
             <Route path="/shopping-list" element={<ShoppingList recipes={planRecipes} />} />
+            <Route path="/review" element={<BulkReview />} />
             <Route path="/admin" element={<Admin />} />
           </Routes>
         </div>

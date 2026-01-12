@@ -959,3 +959,100 @@ Here is the list of ingredients:
         import traceback
         traceback.print_exc()
         return []
+
+
+def extract_raw_ingredients_only(text: str, provider: str = "gemini") -> dict:
+    """
+    Run only Stage 1 of the PDF extraction: raw ingredient line identification.
+    Returns the raw text and identified ingredient lines without full parsing.
+    Useful for bulk review to show what was detected.
+
+    Args:
+        text: Raw text extracted from a recipe PDF
+        provider: LLM provider to use ("openai" or "gemini")
+
+    Returns:
+        dict: {"raw_lines": [{"raw_text": ..., "serving_hint": ...}]}
+    """
+    provider = provider.lower().strip()
+
+    if provider == "gemini":
+        return _extract_raw_ingredients_gemini(text)
+    else:
+        return _extract_raw_ingredients_openai(text)
+
+
+def _extract_raw_ingredients_openai(text: str) -> dict:
+    """Extract raw ingredient lines using OpenAI."""
+    api_key = os.environ.get("OPENAI_API_KEY")
+    if not api_key:
+        print("[extract_raw_ingredients_openai] No API key provided.")
+        return {"raw_lines": []}
+
+    client = OpenAI(api_key=api_key)
+
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": RAW_ING_SYSTEM_PROMPT},
+                {
+                    "role": "user",
+                    "content": f"Here is the text extracted from my PDF:\n\n{text}"
+                },
+            ],
+            tools=RAW_ING_TOOLS,
+            tool_choice={
+                "type": "function",
+                "function": {"name": "extract_raw_ingredients"},
+            },
+            timeout=120.0,
+        )
+
+        tool_call = response.choices[0].message.tool_calls[0]
+        raw_args = json.loads(tool_call.function.arguments)
+        return {"raw_lines": raw_args.get("lines", [])}
+
+    except Exception as e:
+        print(f"[extract_raw_ingredients_openai] ERROR: {e}")
+        return {"raw_lines": []}
+
+
+def _extract_raw_ingredients_gemini(text: str) -> dict:
+    """Extract raw ingredient lines using Google Gemini."""
+    api_key = os.environ.get("GEMINI_API_KEY")
+    if not api_key:
+        print("[extract_raw_ingredients_gemini] No API key provided.")
+        return {"raw_lines": []}
+
+    try:
+        genai.configure(api_key=api_key)
+        model = genai.GenerativeModel("gemini-2.5-flash-lite")
+
+        prompt = f"""{RAW_ING_SYSTEM_PROMPT}
+
+Here is the text extracted from my PDF:
+
+{text}
+
+Respond with a JSON object containing a "lines" array. Each item should have:
+- "raw_text": the ingredient line as seen in the text
+- "serving_hint": serving size hint like "2 pers" or null if unknown
+
+Example response:
+{{"lines": [{{"raw_text": "200g chicken", "serving_hint": "2 pers"}}, {{"raw_text": "1 onion", "serving_hint": null}}]}}
+"""
+
+        response = model.generate_content(
+            prompt,
+            generation_config=genai.GenerationConfig(
+                response_mime_type="application/json"
+            ),
+        )
+
+        result = json.loads(response.text)
+        return {"raw_lines": result.get("lines", [])}
+
+    except Exception as e:
+        print(f"[extract_raw_ingredients_gemini] ERROR: {e}")
+        return {"raw_lines": []}

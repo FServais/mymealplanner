@@ -49,4 +49,16 @@ export const deleteMealPlan = (id) => api.delete(`/meal-plans/${id}`);
 
 export const searchRecipesAI = (ingredients, provider = 'gemini') => api.post('/recipes/search/ai', { ingredients, provider });
 
+// Bulk Review
+export const getSourceFiles = () => api.get('/recipes/source-files');
+export const patchRecipeIngredients = (id, ingredients) => api.patch(`/recipes/${id}/ingredients`, ingredients);
+export const uploadPdfForReview = (formData) => api.post('/tools/pdf/upload', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' }
+});
+export const getPdfUrl = (filename) => `${API_URL}/tools/pdf/${encodeURIComponent(filename)}`;
+export const listStoredPdfs = () => api.get('/tools/pdf/list/all');
+export const extractPdfText = (formData, provider = 'gemini') => api.post(`/tools/pdf/extract-text?provider=${provider}`, formData, {
+    headers: { 'Content-Type': 'multipart/form-data' }
+});
+
 export default api;
